@@ -68,6 +68,8 @@ GitHub Issue (ready-for-agent)
 | `qa-verify-deploy` | every 10m | 4-layer fix verification on staging deploys |
 | `dogfood-weekly` | Saturday 8 AM | Full-site exploratory QA scan |
 
+<img width="454" height="854" alt="image" src="https://github.com/user-attachments/assets/1ab805ef-d687-4272-8edb-136fb6e7c0f0" />
+
 ## Environment Variables
 
 Set in `~/.hermes/profiles/orchestrator/.env`:
