@@ -144,7 +144,7 @@ Skills are reusable procedural knowledge loaded by agent-driven cron jobs:
 
 | Skill | Used By | Purpose |
 |-------|---------|---------|
-| `my-project-operations` | `staging-deploy-watch`, `pr-check-watch`, `qa-verify-deploy` | Operational workflows, deploy pipeline, test suite execution |
+| `project-operations` | `staging-deploy-watch`, `pr-check-watch`, `qa-verify-deploy` | Operational workflows, deploy pipeline, test suite execution |
 | `github-pr-workflow` | `staging-deploy-watch`, `pr-check-watch`, `qa-verify-deploy` | PR lifecycle: branch creation, PR open, CI checks, merge strategy |
 | `github-issues` | `qa-verify-deploy` | Issue creation with labels, regression tracking |
 | `kanban-orchestrator` | `review-failed-watch` | Decomposition playbook, review-failed auto-resolution |

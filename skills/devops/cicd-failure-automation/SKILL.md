@@ -5,7 +5,7 @@ version: 1.0.0
 metadata:
   hermes:
     tags: [cicd, github-actions, deploy, automation, kanban]
-    related_skills: [kanban-orchestrator, my-project-operations, github-pr-workflow]
+    related_skills: [kanban-orchestrator, project-operations, github-pr-workflow]
 ---
 
 # CI/CD Failure Automation
@@ -54,7 +54,7 @@ hermes cron create \
   --name "staging-deploy-watch" \
   --schedule "every 10m" \
   --script staging-deploy-watch.py \
-  --skills "my-project-operations,github-pr-workflow" \
+  --skills "project-operations,github-pr-workflow" \
   --deliver local \
   --workdir /path/to/repo
 ```
@@ -72,7 +72,7 @@ A second cron job watches for all fix cards to complete:
 hermes cron create \
   --name "deploy-fix-pr-watch" \
   --schedule "every 10m" \
-  --skills "github-pr-workflow,my-project-operations" \
+  --skills "github-pr-workflow,project-operations" \
   --deliver local \
   --workdir /path/to/repo
 ```

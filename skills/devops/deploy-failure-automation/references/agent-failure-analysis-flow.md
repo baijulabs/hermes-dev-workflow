@@ -42,7 +42,7 @@ gh pr checks <N>
 - `DIRTY` (merge conflicts) → `pull_request_target` checks may fail because the merge commit has different code than branch HEAD. If a `workflow_dispatch` on the same branch passes, the failures are merge-conflict artifacts, not code bugs.
 - `CLEAN` → failures are genuine code issues on the branch.
 
-**Decision tree (from `my-project-operations` skill):**
+**Decision tree (from `project-operations` skill):**
 | Re-trigger result | PR checks | Merge state | Action |
 |---|---|---|---|
 | `success` | Still red | `DIRTY` | No fix cards — PR needs rebase to resolve conflicts and refresh checks |

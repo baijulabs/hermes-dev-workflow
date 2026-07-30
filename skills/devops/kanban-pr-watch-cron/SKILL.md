@@ -204,7 +204,7 @@ The `pr-consolidation-watch` script can only act on `done` coder cards. If a cod
 - **Destructive git ops blocked in cron:** `git branch -D`, `git reset --hard`, and `git checkout -f` all trigger `smart_denied` approval prompts in Hermes. A cron job cannot approve them. Use `git stash && git checkout main` instead of `-f`, and skip branch deletion altogether (local branches are harmless).
 - **Conflicts between worktrees:** Two cards modifying different sections of the same file (e.g., different routes in a 8000-line router) will 3-way conflict but are cleanly resolvable with `git add -A && git cherry-pick --continue`. True semantic conflicts require manual resolution — flag the PR for manual review.
 - **Stale base (database.py duplication):** When a worktree contains a massive file rewrite (e.g., `database.py` 10228 lines changed), cherry-picking into current main produces an unresolvable conflict because both sides touched every line. The correct fix is to check `git diff origin/main..HEAD --stat` from inside the worktree, extract the specific semantic changes needed, and apply them manually with `patch` or `write_file` instead of cherry-picking the full commit.
-- **Cherry-pick order clobber (silent fix loss):** When a worktree containing a full-file rewrite is cherry-picked **AFTER** a targeted-fix worktree that touched the same file, the rewrite silently overwrites the targeted fix — no conflict markers, no abort, no error. The fix commit shows in `git log` but its delta doesn't survive in the working tree. This is the consolidation equivalent of the stale-base merge clobber described in `my-project-operations`. **Prevention in Phase 2:** After all cherry-picks and before running tests, verify that each card's expected changes survived. For cards whose "Files to Modify" list includes files touched by TWO or more worktree diffs, explicitly check the consolidated diff:
+- **Cherry-pick order clobber (silent fix loss):** When a worktree containing a full-file rewrite is cherry-picked **AFTER** a targeted-fix worktree that touched the same file, the rewrite silently overwrites the targeted fix — no conflict markers, no abort, no error. The fix commit shows in `git log` but its delta doesn't survive in the working tree. This is the consolidation equivalent of the stale-base merge clobber described in `project-operations`. **Prevention in Phase 2:** After all cherry-picks and before running tests, verify that each card's expected changes survived. For cards whose "Files to Modify" list includes files touched by TWO or more worktree diffs, explicitly check the consolidated diff:
   ```bash
   # For each shared file, check the card's specific change
   git diff origin/main..HEAD -- backend/database.py | grep -n "impact_analysis_id INTEGER,"
@@ -217,7 +217,7 @@ The `pr-consolidation-watch` script can only act on `done` coder cards. If a cod
 ## References
 
 - `kanban-orchestrator` skill: decomposition playbook, PR consolidation rules, review gate pattern
-- `my-project-operations` skill: staging deploy threshold, PR discipline (rebase before merge)
+- `project-operations` skill: staging deploy threshold, PR discipline (rebase before merge)
 - `github-pr-workflow` skill: branch creation, PR creation, merge strategy
 - `references/stranded-branch-recovery.md`: detailed procedure for recovering code from un-pushed worktree branches
 

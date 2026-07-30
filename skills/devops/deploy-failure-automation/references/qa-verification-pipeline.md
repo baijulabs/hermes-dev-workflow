@@ -34,7 +34,7 @@ Staging Deploy Succeeds
 | `qa-verify-deploy` | qa | every 10m | Fix verification + per-deploy dogfood |
 | `dogfood-weekly` | qa | Saturday 8 AM (`0 8 * * 6`) | Full-site dogfood scan |
 
-Both use `deepseek/deepseek-v4-flash`, `deliver=telegram`, and load skills: `dogfood`, `workspace-app-qa`, `github-issues`, `github-pr-workflow`, `my-project-operations`.
+Both use `deepseek/deepseek-v4-flash`, `deliver=telegram`, and load skills: `dogfood`, `workspace-app-qa`, `github-issues`, `github-pr-workflow`, `project-operations`.
 
 ## Profile Structure
 
