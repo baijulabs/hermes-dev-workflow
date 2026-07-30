@@ -37,7 +37,7 @@ Route decomposed tasks to the kanban board with explicit assignees:
 - **coder** — implementation tasks (dispatcher runs multiple workers concurrently)
 - **code-reviewer** — independent review of completed implementations
 
-Board `${HERMES_KANBAN_BOARD:-main-dev}` has `default_workdir=/home/user/MyProject`. Use `workspace_kind=worktree` on task creation — the path resolves automatically.
+Board `${HERMES_KANBAN_BOARD:-main-dev}` has `default_workdir=${HERMES_PROJECT_DIR:-/home/user/project}`. Use `workspace_kind=worktree` on task creation — the path resolves automatically.
 
 ### Branch Specification on Card Creation
 

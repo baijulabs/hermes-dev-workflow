@@ -11,7 +11,7 @@ from pathlib import Path
 
 STATE_DIR = Path.home() / ".hermes" / "profiles" / "orchestrator" / "state"
 REPO_DIR = Path.home() / "MyProject"
-KANBAN_DB = Path.home() / ".hermes" / "kanban" / "boards" / "my-project-dev" / "kanban.db"
+KANBAN_DB = Path.home() / ".hermes" / "kanban" / "boards" / "${HERMES_KANBAN_BOARD:-main-dev}" / "kanban.db"
 
 def msg(text): print(text)
 def run(cmd, cwd=REPO_DIR, timeout=120):

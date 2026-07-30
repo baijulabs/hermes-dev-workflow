@@ -14,7 +14,7 @@ import sqlite3
 import os
 import sys
 
-BOARD = "my-project-dev"
+BOARD = "${HERMES_KANBAN_BOARD:-main-dev}"
 DB_PATH = os.path.expanduser(f"~/.hermes/kanban/boards/{BOARD}/kanban.db")
 
 if not os.path.exists(DB_PATH):

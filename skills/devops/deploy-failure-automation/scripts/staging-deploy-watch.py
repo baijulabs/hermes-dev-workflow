@@ -10,7 +10,7 @@ from pathlib import Path
 
 STATE_DIR = Path.home() / ".hermes" / "profiles" / "orchestrator" / "state"
 STATE_FILE = STATE_DIR / "staging-deploy-watch.json"
-REPO = "my-org/MyProject"
+REPO = "${HERMES_PROJECT_REPO:-owner/repo}"
 WORKFLOW_ID = "deploy.yml"
 
 def ensure_state():

@@ -20,7 +20,7 @@ STATE_DIR = Path.home() / ".hermes" / "profiles" / "orchestrator" / "state"
 STATE_FILE = STATE_DIR / "staging-deploy-watch.json"
 REPO = "${HERMES_PROJECT_REPO:-my-org/MyProject}"
 WORKFLOW_ID = "deploy.yml"
-REPO_DIR = Path.home() / "MyProject"
+REPO_DIR = Path("${HERMES_PROJECT_DIR:-/home/user/project}")
 KANBAN_DB = Path.home() / ".hermes" / "kanban" / "boards" / "${HERMES_KANBAN_BOARD:-my-project-dev}" / "kanban.db"
 
 def ensure_state():

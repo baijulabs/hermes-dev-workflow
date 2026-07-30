@@ -12,8 +12,8 @@ Always exits 0 — non-zero exit would trigger an error alert.
 
 import sqlite3, os, subprocess, re, sys, time
 
-BOARD = "my-project-dev"
-REPO = "/home/user/MyProject"
+BOARD = "${HERMES_KANBAN_BOARD:-main-dev}"
+REPO = "${HERMES_PROJECT_DIR:-/home/user/project}"
 DB_PATH = os.path.expanduser(f"~/.hermes/kanban/boards/{BOARD}/kanban.db")
 
 if not os.path.exists(DB_PATH):

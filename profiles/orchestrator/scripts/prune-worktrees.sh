@@ -3,7 +3,7 @@ set -euo pipefail
 # prune-worktrees.sh — Remove stale git worktrees from completed kanban tasks.
 # Runs as no_agent=true cron job. Empty stdout = silent.
 
-REPO_DIR="$HOME/MyProject"
+REPO_DIR="${HERMES_PROJECT_DIR:-$HOME/project}"
 KANBAN_DB="$HOME/.hermes/kanban/boards/${HERMES_KANBAN_BOARD:-my-project-dev}/kanban.db"
 
 cd "$REPO_DIR"

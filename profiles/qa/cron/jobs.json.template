@@ -9,7 +9,7 @@
         "workspace-app-qa",
         "github-issues",
         "github-pr-workflow",
-        "my-project-operations"
+        "project-operations"
       ],
       "skill": "dogfood",
       "model": "deepseek/deepseek-v4-flash",
@@ -39,7 +39,7 @@
         "dogfood",
         "workspace-app-qa",
         "github-issues",
-        "my-project-operations"
+        "project-operations"
       ],
       "skill": "dogfood",
       "model": "deepseek/deepseek-v4-flash",

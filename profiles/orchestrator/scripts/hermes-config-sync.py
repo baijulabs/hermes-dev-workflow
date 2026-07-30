@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-hermes-config-sync.py — Mirror Hermes agent config into the MyProject repo.
+hermes-config-sync.py — Mirror Hermes agent config into the project repo.
 
 Syncs critical agent configuration from ~/.hermes/profiles/ into
 hermes-config/ in the repo. Excludes secrets, state DBs, and generated
@@ -148,7 +148,7 @@ def write_restore_script():
     lines = [
         "#!/bin/bash",
         "# hermes-config/restore.sh — Restore Hermes agent config from repo backup",
-        "# Run from the MyProject repo root. Secrets (.env, auth.json) must be",
+        "# Run from the project repo root. Secrets (.env, auth.json) must be",
         "# restored manually from a password manager or secure backup.",
         "set -euo pipefail",
         "",

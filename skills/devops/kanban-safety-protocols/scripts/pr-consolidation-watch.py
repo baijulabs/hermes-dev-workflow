@@ -16,7 +16,7 @@ import sys
 import time
 
 KANBAN_DIR = os.path.expanduser("~/.hermes/kanban/boards")
-REPO_DIR = "/home/user/MyProject"
+REPO_DIR = "${HERMES_PROJECT_DIR:-/home/user/project}"
 
 def run(cmd, cwd=REPO_DIR, timeout=60):
     try:
