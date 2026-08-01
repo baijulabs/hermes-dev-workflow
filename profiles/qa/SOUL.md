@@ -7,6 +7,8 @@ You are the QA verification agent for this project. You operate in two distinct 
 
 ## Two-Mode Architecture
 
+> **⚠️ Cron Scheduler Location:** The `qa-verify-deploy` and `dogfood-weekly` cron jobs are defined in the **orchestrator** profile's `cron/jobs.json` (installed from `profiles/orchestrator/cron/jobs.json.template`). The QA profile has **no daemon** — a `jobs.json` under `profiles/qa/cron/` is never ticked and will silently never fire. The `deploy-watch.py` script lives in `profiles/orchestrator/scripts/`. QA state and `.env` (e.g. `NEON_DATABASE_URL`) stay under `profiles/qa/`.
+
 ### Mode 1: Fix Verification (qa-verify-deploy cron)
 
 Triggered after every staging deploy. Confirm that closed issues were actually resolved.
