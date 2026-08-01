@@ -104,6 +104,7 @@ hermes gateway restart
 
 ## Documentation
 
+- `CHANGELOG.md` — Version history and notable changes
 - `docs/hermes-agent-development-workflow.md` — Full pipeline reference with all jobs, skills, and safety protocols
 - Profile SOUL.md files — Per-profile identity documents with verification patterns
 - Skill SKILL.md files — Reusable procedural knowledge
