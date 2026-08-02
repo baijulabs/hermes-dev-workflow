@@ -7,9 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-01
+
+### Added
+- **Test failure auto-remediation:** `staging-deploy-watch.py` now creates GitHub issues with `ready-for-agent` label when the deploy succeeds but non-gating tests fail. Previously these failures were reported once to Telegram and forgotten; now they automatically flow into the kanban fix cycle via `gh-issues-to-kanban`.
+  - New `create_test_failure_issue()` function with run-level dedup (no duplicate issues for the same run ID).
+  - Handles both `deploy succeeded + tests failed` and `deploy skipped + tests failed` scenarios.
+  - Respects existing kanban-card dedup logic — skips issue creation when fix cards are already in flight for the branch.
+
 ### Fixed
 - **QA cron jobs now live under the orchestrator profile.** The `qa` profile has no running scheduler daemon, so cron jobs defined in `profiles/qa/cron/jobs.json` were never ticked and silently never fired (caused a missed weekly dogfood scan). `qa-verify-deploy` (every 10m) and `dogfood-weekly` (Sat 8 AM) now run from the orchestrator scheduler via `profiles/orchestrator/cron/jobs.json.template`, with `deploy-watch.py` moved to `profiles/orchestrator/scripts/`. QA state and `.env` stay under `profiles/qa/`.
 - **Documented the scheduler-location constraint** in the QA profile `SOUL.md` so fresh installs don't recreate the dead-end config.
+- **KB documentation corrected:** `staging-deploy-watch` was documented as `agent` type at `every 10m`; corrected to `no_agent` at `every 15m` matching the actual cron config. Architecture diagram and cron tables now document the test-failure→GH-issue→kanban pipeline.
 
 ## [0.1.0] - 2026-07-30
 

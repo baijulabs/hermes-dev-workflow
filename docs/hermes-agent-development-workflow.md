@@ -1,6 +1,6 @@
 # Hermes Agent Development Workflow
 
-> **Last updated:** 2026-07-30  
+> **Last updated:** 2026-08-01  
 > **Profiles:** orchestrator, coder, code-reviewer, qa  
 > **Repo:** my-org/MyProject
 
@@ -111,7 +111,36 @@ GitHub Issue (ready-for-agent label)
 
 | Job | Schedule | Type | Deliver | Script | Purpose |
 |-----|----------|------|---------|--------|---------|
-| `staging-deploy-watch` | every 10m | agent | telegram | `staging-deploy-watch.py` | Polls staging deploy workflow for failures. Deduplicates against existing kanban cards. Creates `[DF-<timestamp>]` fix cards on new failures. |
+| `staging-deploy-watch` | every 15m | no_agent | telegram | `staging-deploy-watch.py` | Polls staging deploy workflow for failures. Deduplicates against existing kanban cards. For deploy failures: outputs `[DF-<timestamp>]` failure details for agent-driven card creation. For **test failures on successful deploys**: creates GitHub issues with `ready-for-agent` label (auto-ingested by `gh-issues-to-kanban`). Skips when open kanban fix cards exist for the branch. |
+
+### Test Failure Auto-Remediation Flow (new in v0.2.0)
+
+When `staging-deploy-watch.py` detects that the deploy succeeded but non-gating tests failed (e.g., Backend Slow Tests), it now creates a GitHub issue instead of just notifying Telegram:
+
+```
+Successful Deploy + Failed Tests
+        │
+        ▼
+staging-deploy-watch.py (no_agent)
+        │
+        ├── 1. Dedup: open kanban fix cards exist? → skip
+        ├── 2. Dedup: GitHub issue already exists for this run? → skip
+        ├── 3. Create GH issue: [Test Failure] ... Run #<id>
+        │      Labels: ready-for-agent, test-failure
+        ├── 4. Telegram notification (preserved)
+        │
+        ▼
+gh-issues-to-kanban (every 15m, no_agent)
+  Ingests the ready-for-agent issue → kanban board
+        │
+        ▼
+Orchestrator decomposes → coder+reviewer cycle
+        │
+        ▼
+PR consolidation → fix deployed
+```
+
+This closes the gap where test failures on successful deploys were reported once to Telegram and then forgotten. Now they automatically flow into the same fix cycle as deploy failures.
 | `pr-check-watch` | every 15m | agent | telegram | — | Monitors open PRs for CI failures and merge conflicts. For conflicts: creates "Resolve merge conflicts" coder+reviewer pairs. For CI failures: creates `[PRFIX-<timestamp>]` fix cards. Skips dependabot PRs. |
 | `review-failed-watch` | every 5m | agent | telegram | — | Auto-resolves blocked code-reviewer cards with `review-failed:` reason. Extracts findings from reviewer comments, creates replacement coder+reviewer pairs, archives old blocked card. Escalates after 3+ cycles. |
 
