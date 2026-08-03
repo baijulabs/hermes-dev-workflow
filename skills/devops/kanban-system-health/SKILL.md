@@ -312,7 +312,7 @@ The cleanest isolation is to strip the entire `kanban:` section from the persona
 # Use python3 to edit the file (config is write-guarded from agent tools)
 python3 << 'PYEOF'
 import re
-path = "/home/user/.hermes/profiles/personal-assistant/config.yaml"
+path = "$HOME/.hermes/profiles/personal-assistant/config.yaml"
 with open(path) as f:
     content = f.read()
 # Remove the entire top-level kanban: block
@@ -491,7 +491,7 @@ A dedicated cron job `review-failed-watch` runs every 15 minutes, loads the `kan
 - Schedule: `every 15m`
 - Skills: `kanban-orchestrator`
 - Deliver: `telegram`
-- Workdir: `/home/user/MyProject`
+- Workdir: `$HOME/my-project`
 
 **Query:** The canonical SQL to find cards to auto-resolve uses the `block_kind` column (there is no `block_reason` column in the schema):
 

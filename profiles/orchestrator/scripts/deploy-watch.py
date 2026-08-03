@@ -18,7 +18,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-REPO = "${HERMES_PROJECT_REPO:-my-org/MyProject}"
+REPO = "${HERMES_PROJECT_REPO:-$HERMES_PROJECT_REPO}"
 STATE_FILE = Path.home() / ".hermes" / "profiles" / "qa" / "state" / "last_verified_deploy.json"
 
 

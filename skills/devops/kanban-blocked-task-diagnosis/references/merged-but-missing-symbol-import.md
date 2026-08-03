@@ -9,7 +9,7 @@ This is a second-order clobber: the stale-base merge that killed the route ALSO 
 ## Diagnosis (don't guess)
 
 ```bash
-cd /home/user/MyProject
+cd $HOME/my-project
 git fetch origin main 2>&1 | tail -1
 
 # 1. Is the schema/class defined on main? (expect >=1)
@@ -32,7 +32,7 @@ If step 1 is >=1 and step 2 is 0, you have an import-only clobber.
 The schema already exists. You only need to add the import to the routes file's `from backend.schemas import (...)` block.
 
 ```bash
-cd /home/user/MyProject
+cd $HOME/my-project
 git checkout -b fix/<gh>-restore-import origin/main
 
 # Find the import block anchor (the line just before the closing paren)
@@ -51,7 +51,7 @@ gh pr create --base main --head fix/<gh>-restore-import \
 
 ## Real-world example (GH-486, PR #536, Jul 21)
 
-After #534 (promote-to-sop restore) merged, CI lint failed with:
+After #114 (promote-to-sop restore) merged, CI lint failed with:
 ```
 F821 Undefined name 'PromoteToSopResponse'
     --> backend/api/routers/private_routes.py:6958:12

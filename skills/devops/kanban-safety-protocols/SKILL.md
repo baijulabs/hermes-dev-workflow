@@ -175,7 +175,7 @@ Three things must align:
 | Feature work based on main | **Omit `--branch`** — dispatcher auto-derives `wt/t_<task-id>`. Never pass `main` as the branch name — it causes `git worktree add` to fail with collision since `main` is already checked out at the repo root. |
 | Bug fix on existing PR branch | The PR branch name (e.g., `fix/df-42-save-values`) |
 | Hotfix on a release branch | The release branch name |
-| Named agent task | e.g., `agent/GH-477` |
+| Named agent task | e.g., `agent/GH-101` |
 
 **Real-world failure mode (Jul 24):** Three coder cards were created with `--branch main` and all three blocked immediately with `"fatal: 'main' is already used by worktree at '...'"`. The fix was to update the DB's `branch_name` column from `main` to `wt/t_<task-id>` and reset `consecutive_failures` to 0. The orchestrator's SOUL.md and the kanban-orchestrator skill both instructed passing `--branch main` for feature work — this instruction was wrong. The `--branch` parameter is the **literal worktree branch name**, not the base branch. Passing `main` tries to check out `main` in a second worktree, which is impossible.
 

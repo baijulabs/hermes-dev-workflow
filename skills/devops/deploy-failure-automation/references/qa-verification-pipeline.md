@@ -57,7 +57,7 @@ Both use `deepseek/deepseek-v4-flash`, `deliver=telegram`, and load skills: `dog
 
 | Layer | Method | Time Budget | When Applied |
 |-------|--------|-------------|--------------|
-| API | `curl` against staging.my-project.com | 30s/endpoint | Backend route bugs, response shape changes |
+| API | `curl` against staging.example.com | 30s/endpoint | Backend route bugs, response shape changes |
 | DB | `psql` against staging Neon | 15s/query | Data persistence fixes (audit logs, FRS, quiz, checklist) |
 | Browser | `browser_navigate` + snapshot | 60s/check | UI fixes (layout, component visibility, i18n) |
 | Version | Compare deploy version vs repo | 5s | Every run |
@@ -103,6 +103,6 @@ Full pass/fail table per verified issue with dogfood findings section. Title: `Q
 
 ## Staging Access Requirements
 
-- **API:** `https://staging.my-project.com` — needs auth token (JWT from login flow)
+- **API:** `https://staging.example.com` — needs auth token (JWT from login flow)
 - **DB:** Neon PostgreSQL — set `NEON_DATABASE_URL` in `~/.hermes/profiles/qa/.env`
 - **Error handling:** If staging unreachable, report as "staging degraded", do NOT file regressions

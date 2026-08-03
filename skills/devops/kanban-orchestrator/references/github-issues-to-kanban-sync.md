@@ -21,7 +21,7 @@ schedule: "every 15m"
 deliver: local        # output saved to disk, not delivered to user
 no_agent: true        # script-only, no LLM cost
 script: hermes_github_sync.sh
-workdir: /home/user/MyProject
+workdir: $HOME/my-project
 ```
 
 ## The Sync Script
@@ -30,7 +30,7 @@ workdir: /home/user/MyProject
 #!/bin/bash
 set -euo pipefail
 
-REPO="my-org/MyProject"
+REPO="my-org/my-project"
 TRIGGER_LABEL="ready-for-agent"
 BOARD_SLUG="my-project-dev"
 
@@ -64,7 +64,7 @@ echo "$done_tasks" | sort -u | while read -r match; do
       2>/dev/null || true
 
     # Archive the completed cards on the Kanban board to prevent infinite closure loops and enable future reopens
-    sqlite3 "/home/user/.hermes/kanban/boards/my-project-dev/kanban.db" \
+    sqlite3 "$HOME/.hermes/kanban/boards/my-project-dev/kanban.db" \
       "UPDATE tasks SET status = 'archived' WHERE (title LIKE '%[GH-$ISSUE_NUM]%' OR title LIKE '%#$ISSUE_NUM%') AND status = 'done';" 2>/dev/null || true
 done
 ```
@@ -90,7 +90,7 @@ done
 
 ```
 GitHub Issue #467
-  └→ Kanban card [GH-467] assigned to orchestrator
+  └→ Kanban card [GH-42] assigned to orchestrator
        └→ auto_decompose creates:
             ├→ Coder card T1 (assignee: coder)
             │    └→ Reviewer card R1 (parents=[T1], assignee: code-reviewer)

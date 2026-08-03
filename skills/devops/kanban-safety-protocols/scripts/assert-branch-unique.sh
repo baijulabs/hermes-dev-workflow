@@ -15,7 +15,7 @@ set -euo pipefail
 
 BRANCH="${1:-}"
 BOARD="${2:-my-project-dev}"
-REPO="${3:-/home/user/MyProject}"
+REPO="${3:-$HOME/my-project}"
 
 [ -n "$BRANCH" ] || { echo "Usage: $0 <branch-name> [board-slug] [repo-path]"; exit 2; }
 

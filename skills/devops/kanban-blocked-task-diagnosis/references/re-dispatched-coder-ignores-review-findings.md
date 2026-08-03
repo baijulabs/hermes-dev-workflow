@@ -2,15 +2,15 @@
 
 ## Summary
 
-The original coder `t_2fc58406` was created to fix 2 review findings in ExperimentDetail.vue (missing `v-if` on promote button visibility, missing `isPromoting` loading state). The card was blocked with `Error: Unknown skill(s): my-project-testing` (skill existed in orchestrator profile but not in coder profile). After the skill was copied to coder, the card was unblocked and re-dispatched.
+The original coder `t_2fc58406` was created to fix 2 review findings in ExperimentDetail.vue (missing `v-if` on promote button visibility, missing `isPromoting` loading state). The card was blocked with `Error: Unknown skill(s): project-testing` (skill existed in orchestrator profile but not in coder profile). After the skill was copied to coder, the card was unblocked and re-dispatched.
 
 The re-dispatched coder ran successfully, wrote new code, and completed. But the new code still had the same 2 bugs. The reviewer flagged the identical issues a second time.
 
 ## Timeline
 
 1. Original coder `t_2fc58406` created to fix promote-to-sop bugs
-2. Coder blocked: `Error: Unknown skill(s): my-project-testing`
-3. `my-project-testing` skill copied from orchestrator to coder profile
+2. Coder blocked: `Error: Unknown skill(s): project-testing`
+3. `project-testing` skill copied from orchestrator to coder profile
 4. Coder unblocked and re-dispatched
 5. Coder ran, wrote code, called `kanban_complete` — marked `done`
 6. Reviewer `t_64de0f00` dispatched, found the same 2 bugs still present

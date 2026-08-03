@@ -2,7 +2,7 @@
 
 ## What Happened (GH-485 Era)
 
-During the July 2026 dispatch batch, the main repo (`/home/user/MyProject`) had `feature/gh-485-kanban-columns-migration` checked out with uncommitted working tree changes in `private_routes.py`, `database.py`, and `package-lock.json`. When kanban worktrees were created via `git worktree add`, those pre-existing working tree changes leaked into every new worktree.
+During the July 2026 dispatch batch, the main repo (`$HOME/my-project`) had `feature/gh-485-kanban-columns-migration` checked out with uncommitted working tree changes in `private_routes.py`, `database.py`, and `package-lock.json`. When kanban worktrees were created via `git worktree add`, those pre-existing working tree changes leaked into every new worktree.
 
 ## Symptom
 

@@ -45,7 +45,7 @@ fi
 This guard queries the kanban DB to check if any `done` orchestrator card matching `[GH-N]` has coder children that are still `todo`/`ready`/`running`/`blocked` (i.e., NOT `done`/`archived`/`cancelled`).
 
 ```bash
-KANBAN_DB="/home/user/.hermes/kanban/boards/my-project-dev/kanban.db"
+KANBAN_DB="$HOME/.hermes/kanban/boards/my-project-dev/kanban.db"
 PARENT_IDS=$(sqlite3 "$KANBAN_DB" \
   "SELECT DISTINCT t.id FROM tasks t
    WHERE (t.title LIKE '%[GH-$ISSUE_NUM]%' OR t.title LIKE '%#$ISSUE_NUM%')
@@ -75,7 +75,7 @@ If an issue was closed prematurely (Guard 4 missing at the time):
 
 ```bash
 # 1. Reopen the issue
-gh issue reopen $ISSUE_NUM --repo my-org/MyProject
+gh issue reopen $ISSUE_NUM --repo my-org/my-project
 
 # 2. If the kanban cards were archived by the sync script, check if they need recovery
 sqlite3 $KANBAN_DB \

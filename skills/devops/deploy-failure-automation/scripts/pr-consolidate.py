@@ -10,7 +10,7 @@ import argparse, json, subprocess, sys
 from pathlib import Path
 
 STATE_DIR = Path.home() / ".hermes" / "profiles" / "orchestrator" / "state"
-REPO_DIR = Path.home() / "MyProject"
+REPO_DIR = Path("$HERMES_PROJECT_DIR")
 KANBAN_DB = Path.home() / ".hermes" / "kanban" / "boards" / "${HERMES_KANBAN_BOARD:-main-dev}" / "kanban.db"
 
 def msg(text): print(text)
@@ -82,7 +82,7 @@ def main():
 
     # Tests
     ok, out = run(["./run-tests.sh", "backend", "-k",
-        "test_list_quiz_attempts or test_promote_to_sop"], timeout=300)
+        "test_pattern_1 or test_pattern_2"], timeout=300)
     if not ok or "FAILED" in out:
         fl = [l for l in out.split("\n") if "FAILED" in l]
         msg("ERROR: backend tests failed:\n" + "\n".join(fl[-10:]))

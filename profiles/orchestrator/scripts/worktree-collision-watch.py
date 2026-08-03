@@ -15,8 +15,8 @@ import subprocess
 import re
 import sys
 
-BOARD = "${HERMES_KANBAN_BOARD:-my-project-dev}"
-REPO = "${HERMES_PROJECT_DIR:-/home/user/MyProject}"
+BOARD = "${HERMES_KANBAN_BOARD:-$HERMES_KANBAN_BOARD}"
+REPO = "${HERMES_PROJECT_DIR:-$HERMES_PROJECT_DIR}"
 DB_PATH = os.path.expanduser(f"~/.hermes/kanban/boards/{BOARD}/kanban.db")
 
 if not os.path.exists(DB_PATH):

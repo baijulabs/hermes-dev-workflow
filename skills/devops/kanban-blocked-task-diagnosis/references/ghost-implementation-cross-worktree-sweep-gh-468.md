@@ -1,15 +1,15 @@
-# Cross-Worktree Sweep: GH-468 Tests & QA Ghost Diagnosis
+# Cross-Worktree Sweep: GH-100 Tests & QA Ghost Diagnosis
 
 **Date:** July 2026
 **Board:** `my-project-dev`
-**Repo:** `/home/user/MyProject`
+**Repo:** `$HOME/my-project`
 
 ## Task Chain
 
 | Task | Role | Title | Status |
 |------|------|-------|--------|
-| `t_71de4a53` | coder | [GH-468] #481 — Tests & QA | done |
-| `t_035b2893` | code-reviewer | [GH-468] review: #481 Tests & QA | blocked (review-failed) |
+| `t_71de4a53` | coder | [GH-100] #105 — Tests & QA | done |
+| `t_035b2893` | code-reviewer | [GH-100] review: #105 Tests & QA | blocked (review-failed) |
 
 ## The User's Question
 
@@ -20,7 +20,7 @@
 ### 1. Check the assigned worktree
 
 ```bash
-cd /home/user/MyProject
+cd $HOME/my-project
 git log origin/main..wt/t_71de4a53 --oneline | head -5
 # → 2 commits, both GH-485 migrate_experiment_stages (unrelated task)
 
@@ -31,17 +31,17 @@ git diff origin/main...wt/t_71de4a53 --stat -- backend/tests/ frontend/tests/ e2
 ### 2. Cross-worktree sweep — scan ALL worktrees for target file additions
 
 ```bash
-for wt in /home/user/MyProject/.worktrees/t_*; do
+for wt in $HOME/my-project/.worktrees/t_*; do
   bname=$(basename "$wt")
-  diff=$(cd /home/user/MyProject && \
+  diff=$(cd $HOME/my-project && \
     git diff --stat origin/main.."wt/$bname" -- backend/tests/ frontend/tests/ e2e/tests/ 2>/dev/null)
   [ -n "$diff" ] && echo "=== $bname ===" && echo "$diff"
 done
 ```
 
-**Result:** 108 worktrees scanned. Only one (`t_ff6f7831`) had test additions — 3 files, 233 insertions, all for Step 5 TrainingModules (unrelated to GH-468). All other worktrees either had deletions (stale PR #517 test reversions) or no changes.
+**Result:** 108 worktrees scanned. Only one (`t_ff6f7831`) had test additions — 3 files, 233 insertions, all for Step 5 OnboardingModules (unrelated to GH-100). All other worktrees either had deletions (stale PR #517 test reversions) or no changes.
 
-### 3. Check for GH-468 commits anywhere
+### 3. Check for GH-100 commits anywhere
 
 ```bash
 git log --all --oneline --grep="468"
@@ -64,4 +64,4 @@ The two commits on `wt/t_71de4a53` (a396cf0, 48aef44) are `migrate_experiment_st
 
 ## Key Difference From Previous GH-486 Ghost
 
-The GH-486 ghost (`t_9e88cc41`) had an unrelated `ProcessMap.vue` diff on its branch — the coder at least touched something. The GH-468 ghost has zero relevant diff anywhere — the coder produced nothing at all.
+The GH-486 ghost (`t_9e88cc41`) had an unrelated `ProcessMap.vue` diff on its branch — the coder at least touched something. The GH-100 ghost has zero relevant diff anywhere — the coder produced nothing at all.

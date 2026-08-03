@@ -25,7 +25,7 @@ The original coder task `t_9e88cc41` (title: `[GH-486] Frontend: Promote to SOP 
 
 ```bash
 # Check if the coder's worktree has any unique commits
-cd /home/user/MyProject
+cd $HOME/my-project
 git log origin/main..wt/t_9e88cc41 --oneline | head -5
 # → empty — no unique commits
 
@@ -68,8 +68,8 @@ When you find one ghost implementation, check for others. In this session (Jul 2
 | Ghost Task | Title | Target |
 |---|---|---|
 | t_9e88cc41 | [GH-486] Frontend: Promote to SOP button + toast | ExperimentDetail.vue |
-| t_1b7a27b6 | [GH-479] Write unit test: empty state for quiz history | TrainingModules.spec.js |
-| t_0c111bdf | [GH-468] #480-BE Backend Step 1 Session Isolation & Auto-Trigger | backend auto_trigger_friction_analysis |
+| t_1b7a27b6 | [GH-103] Write unit test: empty state for quiz history | OnboardingModules.spec.js |
+| t_0c111bdf | [GH-100] #104-BE Backend Step 1 Session Isolation & Auto-Trigger | backend auto_trigger_status_analysis |
 
 All three were produced by the same coder profile in the same dispatch batch. The sibling-ghost search query:
 

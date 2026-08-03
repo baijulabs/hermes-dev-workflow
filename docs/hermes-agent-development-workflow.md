@@ -2,7 +2,7 @@
 
 > **Last updated:** 2026-08-03  
 > **Profiles:** orchestrator, coder, code-reviewer, qa  
-> **Repo:** my-org/MyProject
+> **Repo:** my-org/my-project
 
 This document describes the complete automated development pipeline powered by the Hermes Agent multi-profile kanban system. Every step from GitHub issue ingestion through implementation, review, PR creation, staging deployment, and QA verification is automated.
 
@@ -360,7 +360,7 @@ The `qa` profile runs after every successful staging deploy:
 
 | Layer | Method | Time Budget | When Applied |
 |-------|--------|-------------|--------------|
-| **API** | `curl` against `staging.my-project.com` | 30s/endpoint | Backend route bugs, response shape changes |
+| **API** | `curl` against `staging.example.com` | 30s/endpoint | Backend route bugs, response shape changes |
 | **DB** | `psql` against staging Neon | 15s/query | Data persistence fixes (audit logs, FRS, quiz, checklist) |
 | **Browser** | `browser_navigate` + snapshot | 60s/check | UI fixes (layout, component visibility, i18n) |
 | **Version** | Compare deploy version vs repo | 5s | Every run |

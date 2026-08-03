@@ -27,7 +27,7 @@ MyProject/hermes-config/
 
 **Restore on new machine:**
 ```bash
-git clone https://github.com/my-org/MyProject.git
+git clone https://github.com/my-org/my-project.git
 cd MyProject
 ./hermes-config/restore.sh
 # Manually restore secrets:

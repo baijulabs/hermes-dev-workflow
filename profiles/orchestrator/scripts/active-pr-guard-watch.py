@@ -18,7 +18,7 @@ import os
 import sys
 import time
 
-BOARD = "${HERMES_KANBAN_BOARD:-my-project-dev}"
+BOARD = "${HERMES_KANBAN_BOARD:-$HERMES_KANBAN_BOARD}"
 DB_PATH = os.path.expanduser(f"~/.hermes/kanban/boards/{BOARD}/kanban.db")
 
 if not os.path.exists(DB_PATH):

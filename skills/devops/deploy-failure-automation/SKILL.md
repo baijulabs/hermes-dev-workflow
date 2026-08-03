@@ -140,7 +140,7 @@ When all coder cards are done, consolidates their worktree commits into a PR:
 2. Fetches latest `origin/main`
 3. Creates a fresh branch off main
 4. Cherry-picks commits from each coder's local worktree branch (`git log <branch> ^main` — the `^main` MUST be a separate CLI argument, not part of the same string)
-5. Runs `./run-tests.sh backend -k "test_list_quiz_attempts or test_promote_to_sop"` (or appropriate test filter)
+5. Runs `./run-tests.sh backend -k "test_pattern_1 or test_pattern_2"` (or appropriate test filter)
 6. Runs `./run-tests.sh frontend-all`
 7. If all tests pass: pushes branch, creates PR via `gh pr create`
 8. If any step fails: outputs error message (which gets delivered as notification)
@@ -175,7 +175,7 @@ When the script detects a new failure (the "script output" arrives as a pre-run 
 
 - `references/agent-failure-analysis-flow.md` — step-by-step: reading script context, checking PR merge state, polling for re-trigger completion, the decision tree for genuine vs flake failures, categorizing distinct root causes (DDL vs npm vs missing route), confirming DDL staleness via two-dot git diff, diagnosing npm hoisting via install count, and creating fix cards with verification.
 
-For the concrete example from this session's execution (PR #548, two root causes, two fix card pairs), see the "Example: PR #548 Full Flow" section in that reference.
+For the concrete example from this session's execution (PR #120, two root causes, two fix card pairs), see the "Example: PR #120 Full Flow" section in that reference.
 
 ## Behavior Contract
 
@@ -254,7 +254,7 @@ if [ -n "$PARENT_IDS" ]; then
   done
 fi
 ```
-Real-world failure: Issue #806 closed 5 seconds after orchestrator finished decomposition, before any coder started. Without Guard 4, issues close prematurely.
+Real-world failure: Issue #149 closed 5 seconds after orchestrator finished decomposition, before any coder started. Without Guard 4, issues close prematurely.
 
 **Post-mortem detection:** Check close events:
 ```bash

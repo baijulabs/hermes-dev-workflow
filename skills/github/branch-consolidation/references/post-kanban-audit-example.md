@@ -104,11 +104,11 @@ gh pr edit 566 \
 curl -s -X PATCH \
   -H "Authorization: token $(gh auth token)" \
   -H "Accept: application/vnd.github.v3+json" \
-  https://api.github.com/repos/my-org/MyProject/pulls/566 \
+  https://api.github.com/repos/my-org/my-project/pulls/566 \
   -d '{"title":"Consolidated UAT fixes: GH-554, GH-556, GH-558, GH-559, GH-560, GH-561, GH-562, GH-563, GH-564, GH-565","body":"## Scope\n\nConsolidated UAT/dogfood fixes across multiple issues..."}' | jq '.title, .state, .html_url'
 # → "Consolidated UAT fixes: GH-554, GH-556, GH-558, GH-559, GH-560, GH-561, GH-562, GH-563, GH-564, GH-565"
 # → "open"
-# → "https://github.com/my-org/MyProject/pull/566"
+# → "https://github.com/my-org/my-project/pull/566"
 ```
 
 ### Step 7: Verify

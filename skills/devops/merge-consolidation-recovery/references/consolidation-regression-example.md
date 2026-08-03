@@ -15,7 +15,7 @@ conflict markers — git resolved all conflicts in favor of the incoming branch.
 |----------------|-----|-------------|
 | `4be4370` | POST /steps/1/values route | `@router.post` decorator stripped from `save_values` |
 | `a30c301` | Express catch-all `/{*path}` | Reverted to `/*` — PathError on deploy |
-| PR #548 merge | Step2 403→200 deviation response | Tests expected 403, code returned 200 with `status:"blocked"` |
+| PR #120 merge | Step2 403→200 deviation response | Tests expected 403, code returned 200 with `status:"blocked"` |
 | Various | Step 6 stages i18n keys | `feasibility`/`design`/`testing` in en.json only, missing in es/fr/pt |
 | Various | React 18.3.1 pin | Override removed, bumped to 19.2.8 — 10 MISSING_EXPORT build errors |
 | Various | glob in devDependencies | npm v11 workspace hoisting dropped it; find-untranslated.js broke |

@@ -6,7 +6,7 @@ Card `t_c36027fd` (reviewer) caught a coder (`t_9832cdc2`) working on the wrong 
 
 **Timeline:**
 
-1. Orchestrator tasked coder to fix `package.json` and `check-deps.sh` on branch `fix/df-1784774204-save-values-v2` (PR #548)
+1. Orchestrator tasked coder to fix `package.json` and `check-deps.sh` on branch `fix/df-1784774204-save-values-v2` (PR #120)
 2. Coder created branch `fix/df-1784829956-frontend-hoisting` **from `main`**, not from the target branch
 3. Coder committed only a lockfile regeneration — the actual "fix" code was inherited from `main` commits, not authored on the target branch
 4. Coder marked themselves **done** claiming "files were already correct from prior commits"

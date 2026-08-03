@@ -258,7 +258,7 @@ The reviewer card body should always link back to the coder card so the reviewer
   ```
 
   **Common duplicate patterns:**
-  - Cards under an umbrella issue (e.g. `[GH-468] #477 — ...`) and cards under the sub-issue directly (`[GH-477] — ...`) cover the same work
+  - Cards under an umbrella issue (e.g. `[GH-100] #101 — ...`) and cards under the sub-issue directly (`[GH-101] — ...`) cover the same work
   - A decomposition with `auto_decompose: true` re-runs on the same issue, creating a second set of cards
   - The DB corruption recovery procedure at the end of this skill covers this scenario with a dedicated query
 
@@ -311,7 +311,7 @@ The orchestrator detects blocked reviewer cards by querying the board periodical
 reviewer = kanban_show(task_id="t_55ea20f5")
 findings = extract_findings_from_comments(reviewer["comments"])
 base_branch = extract_base_branch(reviewer["body"])
-issue_hook = extract_issue_hook(reviewer["title"])  # e.g. [DF-1784774204]
+issue_hook = extract_issue_hook(reviewer["title"])  # e.g. [DF-1111111111]
 
 # 2. Create fix card — SAFE BRANCH HANDLING
 # Do NOT pass branch=base_branch — the original worktree still has
@@ -474,7 +474,7 @@ This also eliminates `EBADENGINE` warnings for packages requiring Node >= 22. Se
 
 **`--branch main` causes worktree collision.** Passing `--branch main` on `kanban_create` tells the dispatcher to create a worktree checking out `main` — but `main` is already checked out at the primary repo root, so `git worktree add` fails with `"fatal: 'main' is already used by worktree at '...'"`. The correct pattern:
   - **For feature work based on `main`:** omit `--branch` entirely — the dispatcher auto-derives `wt/t_<task-id>` from the task ID, which creates a unique branch.
-  - **For named PR/fix branches:** pass a unique branch name like `fix/df-1784774204-save-values-v2` or `agent/GH-477`.
+  - **For named PR/fix branches:** pass a unique branch name like `fix/df-1784774204-save-values-v2` or `agent/GH-101`.
   - **Never pass `main`** as the `--branch` value. The `--branch` parameter is the literal worktree branch name, not the base branch. The base branch is only used for context (e.g., the commit to fork from) and is derived automatically from the current HEAD.
 
 **GitHub issues → kanban board sync.** A `no_agent: true` cron job bridges GitHub issues labeled `ready-for-agent` into the kanban board and closes issues when cards complete. The script runs every 15 minutes. See `references/github-issues-to-kanban-sync.md` for the full pipeline and script.

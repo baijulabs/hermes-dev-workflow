@@ -17,7 +17,7 @@ The UAT branch `uat/dogfood-2026-07-24` contained 50+ commits of fixes, most alr
 | Save values / finalise | ~5 | `fix/df-1784774204-save-values`, `fix/df-1784774204-save-values-v2`, `fix/df-1784774204-save-values-v2-ddl`, `fix/df-1784774204-save-values-v2-docker-fix` |
 | Test fixes | ~5 | `fix/df-1784775711-step2-test`, `fix/df-1784775711-step2-test-v2`, `fix/df-1784852601-lint-dup-funcs` |
 | Config/CI | ~5 | `fix/df-1784840668-pin-ruff`, `fix/vpc-egress-private-ranges`, `fix/ci-stability-after-430` |
-| Agent branches | ~4 | `agent/GH-470`, `agent/GH-477`, `agent/GH-500`, `agent/GH-558-use-markdown-fix` |
+| Agent branches | ~4 | `agent/GH-470`, `agent/GH-101`, `agent/GH-500`, `agent/GH-558-use-markdown-fix` |
 | Feature branches | ~2 | `feature/gh-485-kanban-columns-migration`, `feature/video-pipeline-locator-navigation` |
 
 ## Key Challenge: All Branches Behind Main

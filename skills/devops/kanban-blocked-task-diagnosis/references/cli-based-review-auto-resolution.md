@@ -159,7 +159,7 @@ CODER_PARENT=$(sqlite3 "$DB" "SELECT p.id FROM task_links tl JOIN tasks p ON tl.
 BASE_BRANCH=$(sqlite3 "$DB" "SELECT substr(body, instr(body, 'BASE BRANCH:')+12, 80) FROM tasks WHERE id='$CODER_PARENT';" | head -1 | xargs)
 
 # 3. Create fix coder card (omit --branch to avoid collision)
-CODER_JSON=$(hermes kanban create "[PR #789] Fix: Remove orphaned functions" \
+CODER_JSON=$(hermes kanban create "[PR #142] Fix: Remove orphaned functions" \
   --assignee coder \
   --workspace worktree \
   --json \
@@ -168,7 +168,7 @@ CODER_ID=$(echo "$CODER_JSON" | jq -r '.id')
 echo "New coder: $CODER_ID (status=$(echo "$CODER_JSON" | jq -r '.status'), branch=$(echo "$CODER_JSON" | jq -r '.branch_name // "auto"'))"
 
 # 4. Create paired reviewer
-REVIEWER_JSON=$(hermes kanban create "Review: [PR #789] Fix..." \
+REVIEWER_JSON=$(hermes kanban create "Review: [PR #142] Fix..." \
   --assignee code-reviewer \
   --parent "$CODER_ID" \
   --json \

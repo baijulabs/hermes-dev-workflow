@@ -4,7 +4,7 @@ set -euo pipefail
 # Runs as no_agent=true cron job. Empty stdout = silent.
 
 REPO_DIR="${HERMES_PROJECT_DIR:-$HOME/project}"
-KANBAN_DB="$HOME/.hermes/kanban/boards/${HERMES_KANBAN_BOARD:-my-project-dev}/kanban.db"
+KANBAN_DB="$HOME/.hermes/kanban/boards/${HERMES_KANBAN_BOARD:-$HERMES_KANBAN_BOARD}/kanban.db"
 
 cd "$REPO_DIR"
 

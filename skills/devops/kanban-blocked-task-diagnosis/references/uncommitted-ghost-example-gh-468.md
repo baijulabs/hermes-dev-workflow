@@ -1,8 +1,8 @@
-# Uncommitted Ghost Example: GH-468 Tests & QA
+# Uncommitted Ghost Example: GH-100 Tests & QA
 
 **Date:** July 2026
 **Board:** my-project-dev
-**Repo:** /home/user/MyProject
+**Repo:** $HOME/my-project
 
 ## Summary
 
@@ -10,9 +10,9 @@ Coder task `t_71de4a53` was marked `done` with a plausible completion summary cl
 
 ## Key Difference From GH-486 Pure Ghost
 
-| Aspect | GH-486 (pure ghost) | GH-468 (uncommitted ghost) |
+| Aspect | GH-486 (pure ghost) | GH-100 (uncommitted ghost) |
 |--------|---------------------|---------------------------|
-| git log origin/main..wt --oneline | Empty — zero commits | Empty — zero GH-468 commits |
+| git log origin/main..wt --oneline | Empty — zero commits | Empty — zero GH-100 commits |
 | git diff main...wt --stat | Unrelated ProcessMap.vue only | Empty for target test dirs |
 | Working tree git status | Clean — no uncommitted changes | **Real changes to 5 test files** |
 | Code on disk | Never written | Written but never committed |
@@ -30,7 +30,7 @@ Coder task `t_71de4a53` was marked `done` with a plausible completion summary cl
    - `test_step5_workforce_strategy.py` (+138): Quiz submission, pass threshold, score calculation tests
    - `test_step1.py` (+116): Values friction auto-trigger, simulation session isolation tests
    - `test_audit_log.py` (new, 2,884 bytes): Standalone audit log integration tests
-   - `private_routes.py`, `database.py`, `pcp_service.py`: Pre-existing GH-485 working tree pollution (not coder's work)
+   - `private_routes.py`, `database.py`, `psp_service.py`: Pre-existing GH-485 working tree pollution (not coder's work)
 
 4. **Coder never committed.** The coder had this internal debate (from worker log):
    > "Let me now finalize by committing the changes. But wait — the task instructions say 'do not commit, push, or rewrite history unless asked' (from the main system prompt), but the AGENTS.md says 'Commit messages are not your responsibility (the orchestrator handles that). Your output is the working diff on disk.'"
@@ -63,7 +63,7 @@ Reviewer blocked:         1784579334 — review-failed
 
 When asked "was the implementation in another worktree?", a scan of all 108 worktrees for additions to backend/tests/, frontend/tests/, e2e/tests/ found:
 
-- Only `t_ff6f7831` had test additions — 3 files, 233 insertions, all for Step 5 TrainingModules (unrelated to GH-468)
+- Only `t_ff6f7831` had test additions — 3 files, 233 insertions, all for Step 5 OnboardingModules (unrelated to GH-100)
 - All other worktrees had deletions or no changes
 
 The implementation was NOT in another worktree — it was in the assigned worktree as uncommitted changes.
@@ -71,9 +71,9 @@ The implementation was NOT in another worktree — it was in the assigned worktr
 ## The Fix
 
 ```
-cd /home/user/MyProject/.worktrees/t_71de4a53
+cd $HOME/my-project/.worktrees/t_71de4a53
 git add -A
-git commit -m "[GH-468] Tests & QA implementation (uncommitted ghost recovery)"
+git commit -m "[GH-100] Tests & QA implementation (uncommitted ghost recovery)"
 ```
 
 Then re-dispatch the reviewer `t_035b2893` by resetting it to `todo`.

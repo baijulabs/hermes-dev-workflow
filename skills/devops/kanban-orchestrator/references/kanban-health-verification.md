@@ -92,7 +92,7 @@ fi
 # 1. Dispatcher lock status (use Python for reliable flock check)
 python3 -c "
 import fcntl
-f = open('/home/user/.hermes/kanban/.dispatcher.lock', 'a+b')
+f = open('$HOME/.hermes/kanban/.dispatcher.lock', 'a+b')
 try:
     fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
     print('Dispatcher lock: FREE')

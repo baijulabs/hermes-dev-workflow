@@ -91,9 +91,9 @@ copy_profile() {
     # Cron (template → real)
     if [ -f "$src/cron/jobs.json.template" ]; then
         mkdir -p "$dst/cron"
-        sed -e "s|\${HERMES_PROJECT_REPO:-my-org/MyProject}|$REPO|g" \
-            -e "s|\${HERMES_PROJECT_DIR:-/home/user/MyProject}|$PROJECT_DIR|g" \
-            -e "s|\${HERMES_KANBAN_BOARD:-my-project-dev}|$BOARD_SLUG|g" \
+        sed -e "s|\${HERMES_PROJECT_REPO:-$HERMES_PROJECT_REPO}|$REPO|g" \
+            -e "s|\${HERMES_PROJECT_DIR:-$HERMES_PROJECT_DIR}|$PROJECT_DIR|g" \
+            -e "s|\${HERMES_KANBAN_BOARD:-$HERMES_KANBAN_BOARD}|$BOARD_SLUG|g" \
             -e "s|\${HERMES_STAGING_URL:-staging.my-project.com}|${STAGING_URL:-staging.example.com}|g" \
             "$src/cron/jobs.json.template" > "$dst/cron/jobs.json"
     fi

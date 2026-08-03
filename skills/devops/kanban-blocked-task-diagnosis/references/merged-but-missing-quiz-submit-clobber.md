@@ -1,6 +1,6 @@
 # Merged-but-missing: second instance + path-prefix divergence (2026-07-21)
 
-## Instance 2: GH-478 quiz-submit clobber (sibling of the GH-486 promote clobber)
+## Instance 2: GH-102 quiz-submit clobber (sibling of the GH-486 promote clobber)
 
 Same root cause as the GH-486 promote-to-sop clobber (see
 `references/merged-but-missing-stale-base-clobber.md`), different symbol.
@@ -12,8 +12,8 @@ Diagnosis confirmed:
 - `git show origin/main:backend/api/routers/private_routes.py | grep -c "quiz-submit"` → 0
   (route missing from main)
 - The `POST /quiz-submit` route + `get_training_module_quiz()` were in `wt/t_765e2702`
-  (PR #528 source) but clobbered by the #528/#530 squash-merges' full-file overwrite.
-- Only `GET /quiz-attempts` (from #530) survived on main.
+  (PR #111 source) but clobbered by the #111/#112 squash-merges' full-file overwrite.
+- Only `GET /quiz-attempts` (from #112) survived on main.
 
 ### SECOND bug class: test/implementation path-prefix divergence
 The tests used `/steps/5/modules/{id}/quiz-submit` but the merged frontend
@@ -28,7 +28,7 @@ git show origin/main:frontend/src/services/step5Service.js | grep -n "quiz-submi
 ```
 Fix = align BOTH the restored backend route AND the test paths to `/training-modules/`.
 
-### Fix applied (PR #535)
+### Fix applied (PR #115)
 1. Branch `fix/gh-478-quiz-submit-route` from `origin/main` (stash the phantom-modified
    `private_routes.py` first — dirty-main guard).
 2. Re-add `POST /steps/5/training-modules/{module_id}/quiz-submit` route, wired to the
@@ -44,7 +44,7 @@ Fix = align BOTH the restored backend route AND the test paths to `/training-mod
 ### Why the surgical approach (not cherry-pick / whole-file checkout)
 The source worktree `wt/t_765e2702` had full-file churn in `private_routes.py`
 (15k-line diff from the squash-merge). Cherry-pick explodes; `git checkout -- <file>`
-reintroduces #530's regression. Extract only the missing route + DB function block
+reintroduces #112's regression. Extract only the missing route + DB function block
 and patch-insert at the correct anchor (before the existing `GET /quiz-attempts` route).
 
 ## Cross-lesson for the orchestrator

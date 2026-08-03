@@ -22,7 +22,7 @@ delegation:
   model: deepseek/deepseek-v4-flash
   provider: openrouter
 terminal:
-  cwd: /home/user         # orchestrator doesn't need a project cwd
+  cwd: $HOME         # orchestrator doesn't need a project cwd
 ```
 
 **SOUL.md** lives at `~/.hermes/profiles/orchestrator/SOUL.md` — full decomposition playbook.
@@ -53,7 +53,7 @@ agent:
     - Never merge to main. Open a PR, assign to user.
     - Never skip tests or QA gates.
 terminal:
-  cwd: /home/user/MyProject   # MUST be Linux path on WSL
+  cwd: $HOME/my-project   # MUST be Linux path on WSL
 ```
 
 ### WARNING — Windows UNC paths on WSL
@@ -65,7 +65,7 @@ Inside WSL, the terminal backend runs native Linux processes. A `cwd` value like
 cwd: \\wsl.localhost\Ubuntu-24.04\home\user\MyProject
 
 # CORRECT (Linux path):
-cwd: /home/user/MyProject
+cwd: $HOME/my-project
 ```
 
 ## Code Reviewer Profile
@@ -108,7 +108,7 @@ agent:
     { findings: [{severity, file, line?, issue}], approved: bool, summary }
     If blocking issues, kanban_block(reason="review-failed: ...").
 terminal:
-  cwd: /home/user/MyProject
+  cwd: $HOME/my-project
 ```
 
 ## Model Name Validation

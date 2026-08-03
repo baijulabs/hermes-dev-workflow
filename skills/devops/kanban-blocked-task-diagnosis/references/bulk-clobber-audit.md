@@ -75,22 +75,22 @@ changing the (correct) route. Always reconcile to the frontend contract, not the
 ## Table-name fork (deeper clobber)
 
 When auditing DB functions, also check whether the *table* a function queries
-survived. A clobbered PR may have added a `user_quiz_attempts` table DDL + functions
-that query it, while `main` silently kept an older `quiz_attempts` table and rewrote
+survived. A clobbered PR may have added a `user_event_log` table DDL + functions
+that query it, while `main` silently kept an older `event_log` table and rewrote
 the merged functions to use it. Verify no dangling references remain:
 ```bash
-git grep -c "user_quiz_attempts" origin/main -- backend/   # expect 0 if main uses quiz_attempts
+git grep -c "user_event_log" origin/main -- backend/   # expect 0 if main uses event_log
 ```
 If 0 and the restored route writes to the surviving table, the feature is whole —
 no broken references. No need to resurrect the dead table name.
 
-## Real-world result (GH-478/479/486 batch, Jul 21)
+## Real-world result (GH-102/479/486 batch, Jul 21)
 
 Bulk audit of 8 backend PR branches found exactly 2 clobbered routes:
-- `POST /step6/experiments/{id}/promote-to-sop` (PR #524) -> restored in #534
-- `POST /steps/5/training-modules/{id}/quiz-submit` (PR #528) -> restored in #535
+- `POST /step6/experiments/{id}/promote-to-sop` (PR #110) -> restored in #114
+- `POST /steps/5/training-modules/{id}/quiz-submit` (PR #111) -> restored in #115
 
-Plus a URL-prefix mismatch in the GH-479 test file (`/modules/` vs `/training-modules/`)
-fixed in #535, and a dead `user_quiz_attempts` table DDL that was safely superseded
-by `quiz_attempts` on main. All other backend PR branches (db, api, checklist,
+Plus a URL-prefix mismatch in the GH-103 test file (`/modules/` vs `/training-modules/`)
+fixed in #115, and a dead `user_event_log` table DDL that was safely superseded
+by `event_log` on main. All other backend PR branches (db, api, checklist,
 unicorn, tests) verified clean — no further clobbers.

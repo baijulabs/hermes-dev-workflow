@@ -65,4 +65,4 @@ wait
 
 ## Example
 
-This session pushed 14 worktree branches directly as PRs (#520-#533). Most were based on `0049dad` (not `origin/main`), so the PRs included the `0049dad` commit as an ancestor. This was acceptable because the PR diff showed the correct delta — the extra base commit was a small fix that was already on the path to main. Cherry-pick was only needed for PR #521 (GH-468) which had GH-485 migration commits polluting the diff.
+This session pushed 14 worktree branches directly as PRs (#520-#113). Most were based on `0049dad` (not `origin/main`), so the PRs included the `0049dad` commit as an ancestor. This was acceptable because the PR diff showed the correct delta — the extra base commit was a small fix that was already on the path to main. Cherry-pick was only needed for PR #521 (GH-100) which had GH-485 migration commits polluting the diff.

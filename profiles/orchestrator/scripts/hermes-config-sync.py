@@ -22,7 +22,7 @@ import sys
 from pathlib import Path
 
 HERMES = Path.home() / ".hermes"
-REPO = Path("${HERMES_PROJECT_DIR:-/home/user/MyProject}")
+REPO = Path("${HERMES_PROJECT_DIR:-$HERMES_PROJECT_DIR}")
 TARGET = REPO / "hermes-config"
 
 PROFILES = ["orchestrator", "qa", "coder", "code-reviewer"]

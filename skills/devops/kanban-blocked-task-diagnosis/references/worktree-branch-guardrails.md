@@ -9,7 +9,7 @@ Three-layer defense against Pattern 5b (`git worktree add failed` — branch alr
 Run BEFORE `kanban_create --branch <name>` to verify the branch name is unused:
 
 ```bash
-~/.hermes/profiles/orchestrator/scripts/assert-branch-unique.sh "fix/gh-592-foo" "my-project-dev" "/home/user/MyProject"
+~/.hermes/profiles/orchestrator/scripts/assert-branch-unique.sh "fix/gh-592-foo" "my-project-dev" "$HOME/my-project"
 # exit 0 = unique, safe to create
 # exit 1 = collision detected — omit --branch or use a different name
 ```

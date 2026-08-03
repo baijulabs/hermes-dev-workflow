@@ -1,16 +1,16 @@
-# Worktree Branch Collision — GH-584 Real-World Case Study
+# Worktree Branch Collision — GH-135 Real-World Case Study
 
 ## What Happened
 
-The GH-584 decomposition created two coder cards:
-- `t_f9d74d91` — Fix Chat.vue workspaceTitle/StepName/PhaseName i18n → branch `agent/GH-584-chat-vue-i18n` ✅ done
-- `t_9a603b11` — Fix workspace.phaseName interpolation params mismatch → branch `agent/GH-584-chat-vue-i18n` ❌ blocked
+The GH-135 decomposition created two coder cards:
+- `t_f9d74d91` — Fix Chat.vue workspaceTitle/StepName/PhaseName i18n → branch `agent/GH-135-chat-vue-i18n` ✅ done
+- `t_9a603b11` — Fix workspace.phaseName interpolation params mismatch → branch `agent/GH-135-chat-vue-i18n` ❌ blocked
 
 Both cards had the **same branch name**. The first completed and its worktree remained on disk. When the second tried to create its worktree, git refused:
 
 ```
-fatal: 'agent/GH-584-chat-vue-i18n' is already used by worktree at
-  '/home/user/MyProject/.worktrees/t_f9d74d91'
+fatal: 'agent/GH-135-chat-vue-i18n' is already used by worktree at
+  '$HOME/my-project/.worktrees/t_f9d74d91'
 ```
 
 ## Root Cause
@@ -37,7 +37,7 @@ cd /path/to/repo && git worktree list
 
 # Find kanban tasks using a specific branch
 sqlite3 ~/.hermes/kanban/boards/my-project-dev/kanban.db \
-  "SELECT id, title, status FROM tasks WHERE branch_name='agent/GH-584-chat-vue-i18n';"
+  "SELECT id, title, status FROM tasks WHERE branch_name='agent/GH-135-chat-vue-i18n';"
 
 # Fix: assign unique branch and reset
 sqlite3 ~/.hermes/kanban/boards/my-project-dev/kanban.db \

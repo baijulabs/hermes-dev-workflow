@@ -1,8 +1,8 @@
-# Wrong Base Branch — DF-1784829956 (Jul 23, 2026)
+# Wrong Base Branch — DF-2222222222 (Jul 23, 2026)
 
 ## Overview
 
-Coder task `t_9832cdc2` was created to fix frontend build failures (ERR_MODULE_NOT_FOUND for vue) on PR target branch `fix/df-1784774204-save-values-v2` (PR #548). The coder created its worktree from `main` instead of from the target branch. The resulting reviewer card `t_c36027fd` was blocked with `needs_input` after the reviewer correctly identified the base mismatch.
+Coder task `t_9832cdc2` was created to fix frontend build failures (ERR_MODULE_NOT_FOUND for vue) on PR target branch `fix/df-1784774204-save-values-v2` (PR #120). The coder created its worktree from `main` instead of from the target branch. The resulting reviewer card `t_c36027fd` was blocked with `needs_input` after the reviewer correctly identified the base mismatch.
 
 ## Card Chain
 
@@ -40,14 +40,14 @@ WHERE tl.child_id = 't_c36027fd';
 
 ### Verify the base branch mismatch (from repo root)
 ```bash
-cd /home/user/MyProject/.worktrees/t_9832cdc2
+cd $HOME/my-project/.worktrees/t_9832cdc2
 git log --oneline -5 origin/main..HEAD              # Only "build: update package-lock.json" = inherited content
 git merge-base HEAD origin/main                       # Shows main as base
 ```
 
 ## Timeline
 
-1. **Decomposition:** DF-1784829956 was decomposed from DF-1784774204 (the ongoing deploy-fix cycle). The coder task specified target branch `fix/df-1784774204-save-values-v2`.
+1. **Decomposition:** DF-2222222222 was decomposed from DF-1111111111 (the ongoing deploy-fix cycle). The coder task specified target branch `fix/df-1784774204-save-values-v2`.
 2. **Coder dispatched:** `t_9832cdc2` created worktree `fix/df-1784829956-frontend-hoisting` from `main` (commit `b4875d5`).
 3. **Coder completes:** Only authored commit is lockfile regeneration (`3a4aa25`). The substantive `package.json` and `scripts/check-deps.sh` fixes are inherited from `main` commits — not applied by the coder.
 4. **Review promoted:** Reviewer card `t_c36027fd` auto-promotes from `todo` to `ready` when coder completes.
@@ -72,5 +72,5 @@ The coder profile creates worktrees from `main` by default. When the task card m
 
 ## Related Cards
 
-- PR #548 — The target PR on `fix/df-1784774204-save-values-v2` that needs the fix
+- PR #120 — The target PR on `fix/df-1784774204-save-values-v2` that needs the fix
 - `pr-consolidate-df-1784829956` — The cron job stuck waiting for the blocked reviewer

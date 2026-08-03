@@ -2,9 +2,9 @@
 set -euo pipefail
 
 # --- CONFIGURATION ---
-REPO="${HERMES_PROJECT_REPO:-my-org/MyProject}"
+REPO="${HERMES_PROJECT_REPO:-$HERMES_PROJECT_REPO}"
 TRIGGER_LABEL="ready-for-agent"
-BOARD_SLUG="${HERMES_KANBAN_BOARD:-my-project-dev}"
+BOARD_SLUG="${HERMES_KANBAN_BOARD:-$HERMES_KANBAN_BOARD}"
 
 echo "=== Hermes GitHub Sync Tick: $(date) ==="
 
@@ -41,7 +41,7 @@ gh pr list --repo "$REPO" --label "$TRIGGER_LABEL" --state open --json number,ti
     PR_BODY=$(echo "$pr" | jq -r '.body')
 
     # Dedup: skip if pr-check-watch or a previous run already created cards for this branch
-    EXISTING=$(sqlite3 "/home/user/.hermes/kanban/boards/$BOARD_SLUG/kanban.db" \
+    EXISTING=$(sqlite3 "$HOME/.hermes/kanban/boards/$BOARD_SLUG/kanban.db" \
       "SELECT COUNT(*) FROM tasks
        WHERE branch_name = '$PR_BRANCH'
          AND status NOT IN ('done', 'archived', 'cancelled');" 2>/dev/null || echo 0)
@@ -125,7 +125,7 @@ sort -u /tmp/gh_sync_numbers.$$ | while read -r ISSUE_NUM; do
         # still in progress. Orchestrator epics decompose into coder+reviewer pairs;
         # the epic reaching 'done' means decomposition finished, NOT implementation.
         # Only close when all child cards are done/archived/cancelled.
-        KANBAN_DB="/home/user/.hermes/kanban/boards/${HERMES_KANBAN_BOARD:-my-project-dev}/kanban.db"
+        KANBAN_DB="$HOME/.hermes/kanban/boards/${HERMES_KANBAN_BOARD:-$HERMES_KANBAN_BOARD}/kanban.db"
         PARENT_IDS=$(sqlite3 "$KANBAN_DB" \
           "SELECT DISTINCT t.id FROM tasks t
            WHERE (t.title LIKE '%[GH-$ISSUE_NUM]%' OR t.title LIKE '%#$ISSUE_NUM%')
@@ -154,7 +154,7 @@ sort -u /tmp/gh_sync_numbers.$$ | while read -r ISSUE_NUM; do
     gh issue comment "$ISSUE_NUM" --repo "$REPO" --body '✅ **Automated Resolution:** This task was completed by the Hermes agent pool.' 2>/dev/null || true
 
     # Archive the completed cards on the Kanban board to prevent infinite closure loops and enable future reopens
-    sqlite3 "/home/user/.hermes/kanban/boards/${HERMES_KANBAN_BOARD:-my-project-dev}/kanban.db" \
+    sqlite3 "$HOME/.hermes/kanban/boards/${HERMES_KANBAN_BOARD:-$HERMES_KANBAN_BOARD}/kanban.db" \
       "UPDATE tasks SET status = 'archived' WHERE (title LIKE '%[GH-$ISSUE_NUM]%' OR title LIKE '%#$ISSUE_NUM%') AND status = 'done';" 2>/dev/null || true
 
     echo "Closed GitHub #$ISSUE_NUM and removed label, archived corresponding kanban cards."

@@ -21,7 +21,7 @@ from pathlib import Path
 
 STATE_DIR = Path.home() / ".hermes" / "profiles" / "orchestrator" / "state"
 STATE_FILE = STATE_DIR / "staging-deploy-watch.json"
-REPO = "my-org/MyProject"
+REPO = "$HERMES_PROJECT_REPO"
 WORKFLOW_ID = "deploy.yml"
 EVENTS = ["workflow_dispatch", "pull_request_target"]
 

@@ -19,7 +19,7 @@ The script output arrives as a pre-run context block. Extract:
 
 ```
 Branch: fix/df-1784774204-save-values-v2
-PR: #548 (if applicable)
+PR: #120 (if applicable)
 Run URL: https://github.com/.../actions/runs/30031575376
 Re-triggered CI: yes (if the script already ran step 2 dedup)
 ```
@@ -177,10 +177,10 @@ Output the summary with:
 - Cards created (coder+reviewer pairs with IDs)
 - Any prior fix cycles that were found stale/already-pushed
 
-## Example: PR #548 Full Flow
+## Example: PR #120 Full Flow
 
 ```
-Script output: CI failure on fix/df-1784774204-save-values-v2 — open PR #548 exists
+Script output: CI failure on fix/df-1784774204-save-values-v2 — open PR #120 exists
                Re-triggered CI on fix/df-1784774204-save-values-v2
 
 Agent:

@@ -426,7 +426,7 @@ head -5 /path/to/repo/.worktrees/t_<id>/AGENTS.md | grep "Commit messages"
 
 **Implication for batch remediation:** When sweeping uncommitted ghosts, the worktrees with uncommitted code were created BEFORE the AGENTS.md fix. After committing their code and marking reviewers done, the same worktrees will produce another uncommitted ghost if re-dispatched. The fix only takes effect for NEW worktrees created from the updated base.
 
-**Real-world example (GH-468 Tests & QA):** Coder task `t_71de4a53` wrote over 400 lines of real test code across 5 files (`test_step3_unicorn.py`, `test_step2_enterprise_vision.py`, `test_step5_workforce_strategy.py`, `test_step1.py`, and new file `test_audit_log.py`). But `git log origin/main..wt/t_71de4a53 --oneline` showed only GH-485 commits from a shared base branch. `git status --short` from the worktree showed the real test code as uncommitted `M` and `??` entries. The coder's log contained the exact reasoning: "The instructions say 'do not commit, push, or rewrite history unless asked' and 'commit messages are not my responsibility.'" The fix: commit the working tree changes and re-dispatch the reviewer. See `references/uncommitted-ghost-example-gh-468.md` for the full walkthrough.
+**Real-world example (GH-100 Tests & QA):** Coder task `t_71de4a53` wrote over 400 lines of real test code across 5 files (`test_step3_unicorn.py`, `test_step2_enterprise_vision.py`, `test_step5_workforce_strategy.py`, `test_step1.py`, and new file `test_audit_log.py`). But `git log origin/main..wt/t_71de4a53 --oneline` showed only GH-485 commits from a shared base branch. `git status --short` from the worktree showed the real test code as uncommitted `M` and `??` entries. The coder's log contained the exact reasoning: "The instructions say 'do not commit, push, or rewrite history unless asked' and 'commit messages are not my responsibility.'" The fix: commit the working tree changes and re-dispatch the reviewer. See `references/uncommitted-ghost-example-gh-468.md` for the full walkthrough.
 
 **Batch remediation (sweep):** When the root cause of an uncommitted ghost is a bad AGENTS.md instruction (e.g. "Commit messages are not your responsibility"), ALL coder tasks dispatched under that instruction set are likely affected. After finding one, sweep the board for blocked reviewers whose parent coders are `done`:
 
@@ -642,28 +642,28 @@ git checkout -
 
 6. **Mark the old coder task as `archived`** — it's a historical record of the wrong-base-branch pattern, not a task to be re-dispatched.
 
-**Real-world example (DF-1784829956, Jul 23):** Coder task `t_9832cdc2` was assigned to fix frontend build failures (ERR_MODULE_NOT_FOUND for vue) on PR target branch `fix/df-1784774204-save-values-v2` (PR #548). The coder created worktree branch `fix/df-1784829956-frontend-hoisting` from main (commit `b4875d5`). The only authored commit was a `package-lock.json` regeneration (`3a4aa25`). The correct `package.json` devDeps and `scripts/check-deps.sh` content existed on the coder's branch because they were inherited from main commits — not because the coder applied any fixes. On the target branch, all four issues were still broken. Reviewer card `t_c36027fd` correctly blocked the task. The PR consolidate cron (`pr-consolidate-df-1784829956`) hung waiting for the blocked reviewer. See `references/wrong-base-branch-example-df-1784829956.md` for the full walkthrough.
+**Real-world example (DF-2222222222, Jul 23):** Coder task `t_9832cdc2` was assigned to fix frontend build failures (ERR_MODULE_NOT_FOUND for vue) on PR target branch `fix/df-1784774204-save-values-v2` (PR #120). The coder created worktree branch `fix/df-1784829956-frontend-hoisting` from main (commit `b4875d5`). The only authored commit was a `package-lock.json` regeneration (`3a4aa25`). The correct `package.json` devDeps and `scripts/check-deps.sh` content existed on the coder's branch because they were inherited from main commits — not because the coder applied any fixes. On the target branch, all four issues were still broken. Reviewer card `t_c36027fd` correctly blocked the task. The PR consolidate cron (`pr-consolidate-df-1784829956`) hung waiting for the blocked reviewer. See `references/wrong-base-branch-example-df-1784829956.md` for the full walkthrough.
 
 ### Sub-pattern 5b: `git worktree add failed` — branch already checked out by sibling worktree (not `main`)
 
 **Symptoms:** `last_failure_error` contains:
 ```
-workspace: git worktree add failed for ... on branch agent/GH-584-chat-vue-i18n:
-fatal: 'agent/GH-584-chat-vue-i18n' is already used by worktree at '/home/user/project/.worktrees/t_f9d74d91'
+workspace: git worktree add failed for ... on branch agent/GH-135-chat-vue-i18n:
+fatal: 'agent/GH-135-chat-vue-i18n' is already used by worktree at '/home/user/project/.worktrees/t_f9d74d91'
 ```
 The branch name is NOT `main` — it's a named feature or agent branch. `consecutive_failures >= 2`. The branch IS legitimately active in another worktree.
 
 **Distinction from Pattern 5a (branch=main):** In 5a, the branch is `main` and the error happens because the card was created without `--branch`, causing the dispatcher to default to the already-checked-out `main`. In 5b, the card WAS created with a branch, but that branch is already checked out in a sibling worktree from a different card. The root cause is branch name reuse.
 
 **Common contexts for Pattern 5b:**
-- **Auto-resolution of review-failed cards** — the orchestrator copies the original coder's `branch_name` (e.g., `agent/GH-584-chat-vue-i18n`) into the new fix card, but that branch is still checked out by the original coder's worktree. The fix card needs a *new* unique branch.
+- **Auto-resolution of review-failed cards** — the orchestrator copies the original coder's `branch_name` (e.g., `agent/GH-135-chat-vue-i18n`) into the new fix card, but that branch is still checked out by the original coder's worktree. The fix card needs a *new* unique branch.
 - **Decompose of an epic** — sibling cards from the same decomposition all get the same agent branch name. Each needs a unique name.
 
 **Diagnosis:** Confirm the branch is legitimately in use by another worktree:
 ```bash
 cd /path/to/repo
 git worktree list | grep "<branch-name>"
-# Output shows: /path/.worktrees/t_sibling  agent/GH-584-chat-vue-i18n  [commit-hash]
+# Output shows: /path/.worktrees/t_sibling  agent/GH-135-chat-vue-i18n  [commit-hash]
 ```
 
 **Fix — assign a unique branch and reset:**
@@ -871,7 +871,7 @@ If step 4 reveals a later PR (#Y) whose merge result has 0 occurrences, #Y clobb
 
 2. **URL-prefix mismatch between tests / frontend / backend.** After restoring a route, tests can still 404 if they call the wrong PATH. The source of truth is the **frontend service file already merged** (`git show origin/main:frontend/src/services/<svc>.js`) — the route path must match IT, not the test. Real case: tests used `/api/steps/5/modules/{id}/quiz-submit` but frontend + restored route used `/api/steps/5/training-modules/{id}/quiz-submit`; the fix was `replace_all /modules/ -> /training-modules/` in the test file, not changing the (correct) route.
 
-**When one clobber appears, audit the WHOLE batch.** A single confirmed clobber means sibling PRs from the same stale base are suspect too. Run the **bulk clobber audit** — see `references/bulk-clobber-audit.md` for the per-branch "uniquely-added vs current-main" scan (routes + DB funcs + schemas) that finds every clobbered symbol across all backend PR branches in one pass, plus the table-name-fork check (`user_quiz_attempts` vs `quiz_attempts`).
+**When one clobber appears, audit the WHOLE batch.** A single confirmed clobber means sibling PRs from the same stale base are suspect too. Run the **bulk clobber audit** — see `references/bulk-clobber-audit.md` for the per-branch "uniquely-added vs current-main" scan (routes + DB funcs + schemas) that finds every clobbered symbol across all backend PR branches in one pass, plus the table-name-fork check (`user_event_log` vs `event_log`).
 
 **Fix — restore the missing content without a noisy revert:**
 
@@ -918,7 +918,7 @@ If step 4 reveals a later PR (#Y) whose merge result has 0 occurrences, #Y clobb
 
 **Symbol-not-imported check (when restoring code from a clobbered PR, verify imports survive too):** When you restore a route/function by patching it into `main`, do NOT assume the `from backend.schemas import (...)` line it references also survived. The schema/class may exist on `main` (e.g. `PromoteToSopResponse` at `schemas.py:845`) but the *import* into the routes file may have been clobbered by the same stale-base merge that killed the route. CI `ruff F821 Undefined name 'X'` is the signal. Always verify: `git grep -c "<symbol>" origin/main -- <routes-file>` AND `git grep -c "^class <symbol>" origin/main -- <schemas-file>`. If the class exists but the import is missing, add it to the import block — do NOT re-add the schema (it's already there). See `references/merged-but-missing-symbol-import.md` for the full walkthrough.
 
-**Real-world example (GH-486 promote-to-sop, Jul 21):** PR #524 (GH-486) added `POST /step6/experiments/{id}/promote-to-sop` + `promote_experiment_to_sop()`. `e883ac4` is an ancestor of `origin/main`. But PRs #528 (GH-478-routes) and #530 (GH-479-api) were pushed from worktrees (`wt/t_765e2702`, `wt/t_79ce9f6f`) checked out before #524 merged. Their `private_routes.py` was the pre-#524 version. Their squash-merges overwrote the file, deleting the route. `test_step6_cx_innovation_lab.py` (from #533, GH-487) then 404'd on the endpoint. Fix: surgical patch of just the route + DB function from `wt/t_c9de841e` onto a fresh branch from `origin/main` (the source commit had full-file churn so cherry-pick/whole-file-checkout were NOT viable) and re-open as PR #534. See `references/merged-but-missing-stale-base-clobber.md`.
+**Real-world example (GH-486 promote-to-sop, Jul 21):** PR #110 (GH-486) added `POST /step6/experiments/{id}/promote-to-sop` + `promote_experiment_to_sop()`. `e883ac4` is an ancestor of `origin/main`. But PRs #111 (GH-102-routes) and #112 (GH-103-api) were pushed from worktrees (`wt/t_765e2702`, `wt/t_79ce9f6f`) checked out before #110 merged. Their `private_routes.py` was the pre-#110 version. Their squash-merges overwrote the file, deleting the route. `test_step6_cx_innovation_lab.py` (from #113, GH-487) then 404'd on the endpoint. Fix: surgical patch of just the route + DB function from `wt/t_c9de841e` onto a fresh branch from `origin/main` (the source commit had full-file churn so cherry-pick/whole-file-checkout were NOT viable) and re-open as PR #114. See `references/merged-but-missing-stale-base-clobber.md`.
 
 ## Pattern 10: `active_pr` guard — coder completed but card stuck in `ready`
 
@@ -1054,7 +1054,7 @@ hermes kanban stats   # should show 0 orchestrator cards in ready/todo/running
 
 **Prevention:** When creating epic orchestration cards, ensure their bodies/prompts instruct the decomposer to assign *implementation* children to `coder`, not to itself. The `root_assignee` in the decompose payload should be `coder`, not `orchestrator`, for any task that writes code.
 
-**Real-world example (Jul 30, 2026):** Epic `t_1aae7197` ("[GH-788] Add FR 4.5 PCP Manifesto Test Suite") crashed twice and was auto-decomposed into 4 children — all assigned to `orchestrator`. Three spawned workers that sent heartbeats but were presumably trying to decompose test requirements instead of writing test code. One child (`t_40e7c25f`) completed, but the other three were stuck. Also `t_f5576d2a` ("[GH-786] Backend: Refactor Step 5 completion gate") was assigned to `orchestrator` and stuck in `todo` waiting on a running coder parent. All reassigned to `coder` + paired reviewer cards created.
+**Real-world example (Jul 30, 2026):** Epic `t_1aae7197` ("[GH-141] Add FR 4.5 PSP Manifesto Test Suite") crashed twice and was auto-decomposed into 4 children — all assigned to `orchestrator`. Three spawned workers that sent heartbeats but were presumably trying to decompose test requirements instead of writing test code. One child (`t_40e7c25f`) completed, but the other three were stuck. Also `t_f5576d2a` ("[GH-140] Backend: Refactor Step 5 completion gate") was assigned to `orchestrator` and stuck in `todo` waiting on a running coder parent. All reassigned to `coder` + paired reviewer cards created.
 
 ## Bulk Unblocking
 
@@ -1166,8 +1166,8 @@ WHERE id IN ('<orphan-id-1>', '<orphan-id-2>');
 - `references/worktree-to-pr-shortcut.md` — push worktree branches directly as PR branches (skip cherry-pick when no conflicts)
 - `references/fix-validation.md` — validate root cause before making configuration or workflow changes; avoid unnecessary diffs that erode trust
 - `references/ghost-implementation-example-gh-486.md` — detailed walkthrough of a pure ghost (coder marked `done` without ever writing code — GH-486 Promote-to-SOP), with diagnostic commands and resolution pattern
-- `references/uncommitted-ghost-example-gh-468.md` — detailed walkthrough of an uncommitted ghost (coder wrote real code via write_file/patch but never ran `git add` or `git commit` — GH-468 Tests & QA), with timeline, diagnostic commands, and fix
-- `references/ghost-implementation-cross-worktree-sweep-gh-468.md` — cross-worktree sweep technique used during the GH-468 investigation to confirm the implementation wasn't in a sibling worktree
+- `references/uncommitted-ghost-example-gh-468.md` — detailed walkthrough of an uncommitted ghost (coder wrote real code via write_file/patch but never ran `git add` or `git commit` — GH-100 Tests & QA), with timeline, diagnostic commands, and fix
+- `references/ghost-implementation-cross-worktree-sweep-gh-468.md` — cross-worktree sweep technique used during the GH-100 investigation to confirm the implementation wasn't in a sibling worktree
 - `references/replacement-chain-sweep.md` — diagnostic queries and decision tree for sweeping stale blocked/ready/triage tasks after creating replacement coder+reviewer pairs
 - `references/worktree-pollution-gh-485.md` — diagnosing and fixing pre-existing working tree changes from the main repo leaking into kanban worktrees
 - `references/re-dispatched-coder-ignores-review-findings.md` — detailed walkthrough of a re-dispatched coder that wrote new code but still missed the same review findings (t_2fc58406 / t_64de0f00 — ExperimentDetail.vue promote-to-sop), with timeline, diagnostic commands, and resolution pattern
