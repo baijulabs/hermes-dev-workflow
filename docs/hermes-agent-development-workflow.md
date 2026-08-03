@@ -1,6 +1,6 @@
 # Hermes Agent Development Workflow
 
-> **Last updated:** 2026-08-01  
+> **Last updated:** 2026-08-03  
 > **Profiles:** orchestrator, coder, code-reviewer, qa  
 > **Repo:** my-org/MyProject
 
@@ -11,19 +11,20 @@ This document describes the complete automated development pipeline powered by t
 ## Architecture Overview
 
 ```
-GitHub Issue (ready-for-agent label)
-        │
-        ▼
+GitHub Issue (ready-for-agent label)  ← SINGLE SOURCE OF TRUTH
+        │                                    Never closed by automation —
+        ▼                                    only by PR merge (Closes #XXX)
 ┌──────────────────────────────────────────────┐
-│  gh-issues-to-kanban (every 15m, no_agent)   │
-│  Ingests issues → kanban board                │
-└──────────────────────────────────────────────┘
+│  gh-issues-to-kanban (every 5m, no_agent)   │
+│  Ingests issues → orchestrator cards         │  INGESTION ONLY
+└──────────────────────────────────────────────┘  (no resolution section)
         │
         ▼
 ┌──────────────────────────────────────────────┐
 │  Orchestrator (manual / issue-driven)         │
 │  Decomposes into parallel coder+reviewer      │
 │  pairs with strict file isolation              │
+│  → Posts "📋 Decomposed" comment to GH issue  │
 └──────────────────────────────────────────────┘
         │
         ▼
@@ -33,16 +34,33 @@ GitHub Issue (ready-for-agent label)
 │  Reviewer auto-promoted after coder done      │
 └──────────────────────────────────────────────┘
         │
+        ├── Coder done → GH issue comment: "✅ Implementation complete"
+        ├── Reviewer done → GH issue comment: "✅ Code review passed"
+        │
+        ▼
+┌──────────────────────────────────────────────┐
+│  kanban-to-gh-tracker (every 5m, no_agent)   │
+│  Posts milestone comments to GH issues        │  AUDIT TRAIL
+│  Idempotent: one comment per milestone        │
+└──────────────────────────────────────────────┘
+        │
         ▼
 ┌──────────────────────────────────────────────┐
 │  PR Consolidation Watchdog (every 10m)        │
 │  Finds done pairs → version bumps → PR        │
+│  → Posts "📦 PR #XXX" comment to GH issue    │
 └──────────────────────────────────────────────┘
         │
         ▼
 ┌──────────────────────────────────────────────┐
 │  GitHub CI/CD (deploy.yml)                    │
 │  Tests → Build → Deploy to Staging            │
+└──────────────────────────────────────────────┘
+        │
+        ▼
+┌──────────────────────────────────────────────┐
+│  PR Merged → GH auto-closes issue             │
+│  (via "Closes #XXX" in PR body)               │  NO AUTOMATION
 └──────────────────────────────────────────────┘
         │
         ▼
@@ -97,6 +115,26 @@ GitHub Issue (ready-for-agent label)
 3. **Browser** — Drives staging UI for visual verification
 4. **Version** — Confirms deployed version matches workflow
 
+## GitHub Issue Lifecycle (v0.3.0+)
+
+The GH issue is the single source of truth — never closed by automation, only by PR merge. Kanban cards are ephemeral implementation artifacts.
+
+### The issue is never auto-closed
+- hermes_github_sync.sh handles ingestion only — pulls labeled issues into kanban
+- No resolution section, no gh issue close, no "Automated Resolution" comments
+- When the coder+reviewer pair is done, the consolidation watchdog creates a PR
+- The PR body includes Closes #XXX — GitHub auto-closes the issue on merge
+
+### Audit trail on the issue
+kanban-to-gh-tracker posts idempotent comments at each milestone:
+- Decomposed: Orchestrator card reaches done
+- Implementation done: Coder card reaches done
+- Review passed: Reviewer card reaches done
+- PR created: Consolidation watchdog creates PR
+
+### Resolution-loop-of-death eliminated
+In previous versions, the sync script treated kanban done as "fix deployed" and auto-closed issues. This caused issues closed before the fix was merged to main, orphaned worktree branches, and repeated close/reopen loops. Now the issue stays open until a human merges the PR.
+
 ---
 
 ## Cron Jobs Reference
@@ -105,7 +143,7 @@ GitHub Issue (ready-for-agent label)
 
 | Job | Schedule | Type | Deliver | Script | Purpose |
 |-----|----------|------|---------|--------|---------|
-| `gh-issues-to-kanban` | every 15m | no_agent | local | `hermes_github_sync.sh` | **Ingestion:** Pulls labeled issues AND PRs into kanban. Issues get [GH-N] orchestrator cards. PRs with ready-for-agent label get review-feedback orchestrator cards (deduped with pr-check-watch by branch). **Resolution:** Closes issues when all kanban child cards are done. Skips PRs (never auto-closes pull requests). Guards: epic label, open child issues, in-flight coder children. |
+|| `gh-issues-to-kanban` | every 5m | no_agent | local | `hermes_github_sync.sh` | **Ingestion only (v0.3.0+).** Pulls labeled issues into kanban as `[GH-N]` orchestrator cards. Pulls labeled PRs with review feedback as `[PR #N]` cards. No longer closes issues or archives cards — GH issues are the single source of truth, closed only by PR merge. |
 
 ### Failure Detection & Auto-Remediation
 
@@ -142,6 +180,7 @@ PR consolidation → fix deployed
 
 This closes the gap where test failures on successful deploys were reported once to Telegram and then forgotten. Now they automatically flow into the same fix cycle as deploy failures.
 | `pr-check-watch` | every 15m | agent | telegram | — | Monitors open PRs for CI failures and merge conflicts. For conflicts: creates "Resolve merge conflicts" coder+reviewer pairs. For CI failures: creates `[PRFIX-<timestamp>]` fix cards. Skips dependabot PRs. |
+| `kanban-to-gh-tracker` | every 5m | no_agent | local | `kanban-to-gh-tracker.py` | **Audit trail (v0.3.0+).** Scans kanban state transitions and posts idempotent milestone comments to linked GH issues: decomposed, coder done, reviewer approved. Uses JSON state file for idempotency — never duplicates comments. Never closes issues. |
 | `review-failed-watch` | every 5m | agent | telegram | — | Auto-resolves blocked code-reviewer cards with `review-failed:` reason. Extracts findings from reviewer comments, creates replacement coder+reviewer pairs, archives old blocked card. Escalates after 3+ cycles. |
 
 ### Pipeline Health & Safety

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-03
+
+### Changed
+- **GH issue is now the single source of truth.** Kanban cards are ephemeral implementation artifacts. Issues are NEVER closed by automation — only by PR merge (`Closes #XXX`).
+- **Removed destructive resolution section** from `hermes_github_sync.sh` — no more `gh issue close`, no more auto-archive, no more "Automated Resolution" spam. The sync script now handles ingestion ONLY.
+- **`gh-issues-to-kanban` row corrected** in docs: type is `no_agent` (not `agent`), schedule is `every 5m`. Previously had stale docs from before the no_agent conversion.
+
+### Added
+- **`kanban-to-gh-tracker`** — new `no_agent: true` cron job that posts idempotent audit comments to GitHub issues at each pipeline milestone: decomposed, coder done, reviewer approved. Never closes issues.
+- **PR consolidation posts GH comments** — when `pr-consolidation-watch.py` creates a PR, it now posts a "📦 PR #XXX created" comment on the linked GH issue.
+- **`kanban-health-check`** — 3-hour watchdog (gateway, DB integrity, cron job health, rate limits, Telegram connectivity). Silent when nominal. Already deployed in v0.2.0, documented here.
+
 ## [0.2.0] - 2026-08-01
 
 ### Added
