@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-08-12
+
+### Changed
+- **Phased cron naming:** All cron jobs renamed to `{phase}-{action}` format (e.g. `pr-consolidation-watch` → `build-consolidate-prs`). Phase prefix makes pipeline sequence obvious in listings.
+- **Merge strategy:** `gh pr merge --squash` → `gh pr merge --merge` (merge commit). Preserves branch commit hashes on main so `git merge-base --is-ancestor` works correctly.
+- **Merge guard tightened:** Now requires BOTH `mergeable == "MERGEABLE"` AND `mergeStateStatus == "clean"`. Only merges when all CI is green — no pending or failing checks.
+- **Schedule swap:** `build-consolidate-prs` 10m → 5m (creates PRs faster), `merge-ready-prs` 5m → 10m (CI takes ~15min anyway).
+- **Version bump moved:** From `build-consolidate-prs` to `merge-ready-prs`. Single bump per tick after all merges land — avoids per-PR collision conflicts.
+- **Zero-commits auto-archive:** `build-consolidate-prs` checks `git rev-list --count origin/main..branch` before creating PR. If 0 commits (content already on main), archives coder cards and skips.
+- **`--ignore-scripts` added** to Lighthouse CI npm install to avoid `patch-package: not found` postinstall error.
+- **Genericized all hardcoded paths.** Kanban DB path, project directory, repo slug replaced with `${HERMES_PROJECT_*}` env var placeholders.
+
+### Added
+- **`ingest-deploy-failures`** state reset. State file was stuck on an old run ID, causing newer deploy failures to be silently skipped. Reset to 0 to catch all failures fresh.
+- **Pipeline diagram** (`dev-workflow-pipeline.html`) — light-themed visual of the full happy path and hygiene separation.
+
+### Fixed
+- **Deploy env var mismatch:** `BACKEND_SERVICE_NAME_STAGING` referenced in four places but never defined. The actual env var was `BACKEND_SERVICE_NAME` (no `_STAGING` suffix). Fix pushed in PR #1275.
+
 ## [0.3.0] - 2026-08-03
 
 ### Changed
