@@ -17,8 +17,11 @@ log_issue() {
 }
 
 # ── 1. Stale worktree dirs ──
-STALE_COUNT=$(find "$HOME/.hermes/kanban/worktrees" -maxdepth 1 -type d -mtime +7 2>/dev/null | wc -l)
-if [ "$STALE_COUNT" -gt 0 ]; then
+STALE_COUNT=0
+if [ -d "$HOME/.hermes/kanban/worktrees" ]; then
+    STALE_COUNT=$(find "$HOME/.hermes/kanban/worktrees" -maxdepth 1 -type d -mtime +7 2>/dev/null | wc -l || true)
+fi
+if [ "$STALE_COUNT" -gt 0 ] 2>/dev/null; then
     log_issue "Stale worktree directories: $STALE_COUNT (older than 7 days)"
 fi
 
