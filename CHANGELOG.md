@@ -24,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Pipeline diagram** (`dev-workflow-pipeline.html`) — light-themed visual of the full happy path and hygiene separation.
 
 ### Fixed
-- **Deploy env var mismatch:** `BACKEND_SERVICE_NAME_STAGING` referenced in four places but never defined. The actual env var was `BACKEND_SERVICE_NAME` (no `_STAGING` suffix). Fix pushed in PR #1275.
+- **Deploy env var mismatch:** Documentation now warns that deploy.yml service name env vars must match between definition and reference (`SERVICE_NAME` vs `SERVICE_NAME_STAGING` suffix mismatch).
 
 ## [0.3.0] - 2026-08-03
 
