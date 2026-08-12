@@ -1,5 +1,11 @@
 {
   "jobs": [
+    # 5m jobs are staggered across :00-:04 to avoid kanban DB write contention:
+    # Slot :00 — ingest-gh-issues, audit-worktree-collisions
+    # Slot :01 — ingest-ci-failures, audit-pr-guard
+    # Slot :02 — build-reviewer-resolve, build-coder-resolve
+    # Slot :03 — sync-gh-comments, build-reviewer-approve
+    # Slot :04 — build-consolidate-prs
     {
       "id": "job-ingest-gh-issues",
       "name": "ingest-gh-issues",
@@ -7,8 +13,8 @@
       "skills": [],
       "script": "ingest-gh-issues.sh",
       "no_agent": true,
-      "schedule": {"kind": "interval", "minutes": 5, "display": "every 5m"},
-      "schedule_display": "every 5m",
+      "schedule": {"kind": "interval", "minutes": 5, "display": "every 5m (stagger :00)"},
+      "schedule_display": "every 5m (stagger :00)",
       "repeat": {"times": null, "completed": 0},
       "enabled": true,
       "deliver": "local",
