@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-08-12
+
+### Changed
+- **`ingest-deploy-failures` now only monitors `main` branch.** Previously handled non-main branch (worktree/PR) failures by re-triggering CI on the assumption "open PR = fix exists, just needs CI re-run". This was wrong — CI failures on PRs need actual fix cards. Non-main failures are now silently deferred to `ingest-ci-failures` (every 5m) which enqueues fix tasks via the agent queue.
+- **`test-failure` label created.** The label didn't exist in the repo, causing `gh issue create --label "ready-for-agent,test-failure"` to silently fail. Created with red color `d73a4a`.
+
+### Fixed
+- **`ingest-deploy-failures` PR filter skipping merge events.** Line 90-91 filtered out all `pull_request_target` runs where the PR was already merged — but deploy-to-staging only runs on `closed + merged` events. The filter was silently discarding the very runs that needed monitoring. Fixed by checking deploy job presence before filtering out merged-PR runs.
+- **`ingest-deploy-failures` state file stuck.** `last_run_id` was set to a run with a higher numeric ID but earlier timestamp, causing newer deploy failures with lower IDs to be skipped. State reset to 0.
+- **`audit-kanban-health` shell syntax.** `grep -ci || echo 0` produced `"0\n0"` instead of `0` when no matches, causing `[: 0 0: integer expression expected`. Fixed with `|| true` pattern.
+
 ## [2.0.0] - 2026-08-12
 
 ### Changed
