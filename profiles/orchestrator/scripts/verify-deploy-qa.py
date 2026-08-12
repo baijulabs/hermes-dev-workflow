@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-deploy-watch.py — Detects new staging deploys for QA verification.
+verify-deploy-qa.py — Detects new staging deploys for QA verification.
 
 Polls the deploy workflow for successful deploy-to-staging jobs.
 Compares against state file to avoid re-processing.

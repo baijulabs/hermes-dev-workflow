@@ -1,6 +1,6 @@
 # Hermes Agent Development Workflow
 
-A portable, automated development pipeline powered by Hermes Agent multi-profile kanban system. Bootstraps issue ingestion, decomposition, parallel coder+reviewer implementation, PR consolidation, and QA verification onto any project with one command.
+A portable, automated development pipeline powered by Hermes Agent multi-profile kanban. Bootstraps issue ingestion, parallel coder+reviewer implementation, PR consolidation, merge, and QA verification onto any project.
 
 ## Quick Start
 
@@ -10,108 +10,140 @@ cd hermes-dev-workflow
 ./setup.sh --repo "owner/project" --dir "/path/to/project"
 ```
 
-Edit secrets, start the gateway, and label an issue `ready-for-agent`. The pipeline picks it up within 15 minutes.
+Edit secrets, start the gateway, and label an issue `ready-for-agent`. The pipeline picks it up within minutes.
 
-## Architecture
+## Pipeline
+
+### 👑 Happy Path (GH Issue → Staging Deploy)
 
 ```
-GitHub Issue (ready-for-agent)
+GH issue (labeled ready-for-agent)
         │
-        ▼  gh-issues-to-kanban (every 15m)
+        ▼  every 5m
+┌──────────────────────────────────────────────┐
+│  01-ingest · ingest-gh-issues                │
+│  Syncs labeled issues → orchestrator kanban  │
+│  card. Ingestion only — never closes issues. │
+└──────────────────────────────────────────────┘
         │
-┌─────────────────────────────────┐
-│  Orchestrator                   │
-│  Decomposes → coder+reviewer    │
-└─────────────────────────────────┘
-        │
-        ▼  Dispatcher (continuous)
-┌─────────────┐   ┌──────────────┐
-│  Coder      │   │  Reviewer    │
-│  Worktree   │ → │  Quality     │
-│  Impl       │   │  Gate        │
-└─────────────┘   └──────────────┘
-        │
-        ▼  pr-consolidation-watch (every 10m)
-┌─────────────────────────────────┐
-│  Version bump → PR → CI → Deploy│
-└─────────────────────────────────┘
-        │
-        ▼  QA (every 10m + weekly)
-┌─────────────────────────────────┐
-│  API → DB → Browser → Version   │
-└─────────────────────────────────┘
+        ▼  auto-decompose → coder + reviewer cards
+┌──────────────────────────────────────────────┐
+│  02-queue · queue-agent-processor            │
+│  Dispatches coder (implements) + reviewer    │
+│  (approves) from kanban board.               │
+│  Schedule: every 30m (7am-9pm)               │
+└──────────────────────────────────────────────┘
+        │  coder done + reviewer approved
+        ▼  every 5m
+┌──────────────────────────────────────────────┐
+│  03-build · build-consolidate-prs            │
+│  Finds done coder+reviewer pairs on same GH  │
+│  issue → merges worktrees → creates          │
+│  consolidation PR. Auto-adds Closes #N.      │
+│  0-commits check → auto-archive if content   │
+│  already on main.                            │
+└──────────────────────────────────────────────┘
+        │  PR created → CI triggers
+        ▼  every 10m
+┌──────────────────────────────────────────────┐
+│  04-merge · merge-ready-prs                  │
+│  Merges PRs where mergeable=MERGEABLE AND    │
+│  mergeStateStatus=clean (all CI green).      │
+│  Uses --merge (preserves branch hashes on    │
+│  main). Single version bump after all merges.│
+│  Deploy cooldown gate prevents overlapping.  │
+└──────────────────────────────────────────────┘
+        │  PR merged to main → deploy.yml triggers
+        ▼  every 15m
+┌──────────────────────────────────────────────┐
+│  01-ingest · ingest-deploy-failures          │
+│  Monitors main deploy runs at job-level.     │
+│  Detects Deploy to Staging failures →        │
+│  creates fix cards. Dedup via kanban board.  │
+└──────────────────────────────────────────────┘
+        │  deploy succeeds
+        ▼  every 10m
+┌──────────────────────────────────────────────┐
+│  06-verify · verify-deploy-qa                │
+│  Validates staging health, critical flows,   │
+│  maps changed files → E2E steps. Creates     │
+│  GH issues for bugs found.                   │
+└──────────────────────────────────────────────┘
 ```
+
+### ⟳ Parallel Detection
+
+```
+┌──────────────────────────────────────────────┐
+│  01-ingest · ingest-ci-failures (every 5m)   │
+│  Monitors open PRs for CI failures and merge │
+│  conflicts. Enqueues fix tasks → agent       │
+│  processor creates coder+reviewer cards.     │
+│  Conflict resolution pushed directly to the  │
+│  existing PR branch (no new PR created).     │
+└──────────────────────────────────────────────┘
+```
+
+### Edge Case Handlers (every 5m, 03-build phase)
+
+| Job | Handles |
+|-----|---------|
+| `build-reviewer-resolve` | Auto-resolves `review-failed:` blocked reviewer cards. Extracts findings, creates replacement coder+reviewer pair. |
+| `build-reviewer-approve` | Auto-completes reviewer cards when coder is done. |
+| `build-coder-resolve` | Handles coder timeouts and `review-required:` blocks. |
+
+### 🧹 Hygiene (Maintenance)
+
+| Job | Schedule | Purpose |
+|-----|----------|---------|
+| `audit-stranded-worktrees` | every 2h | Flags worktree branches with unique commits not on main and no pending kanban work. Creates triage GH issue. |
+| `audit-worktree-collisions` | every 5m | Detects worktree branch conflicts (same branch checked out by multiple worktrees). |
+| `audit-pr-guard` | every 5m | Enforces PR guard conditions (main-tip requirement, no workflow_dispatch from non-main branches). |
+| `audit-archive-cancelled` | every 15m | Archives cancelled kanban cards, cleans up stale state. |
+| `audit-prune-worktrees` | every 48h | Deletes stale .worktrees/ directories older than 7 days. |
+| `audit-kanban-health` | every 3h | Kanban DB integrity checks (SQLite integrity_check). |
+| `sync-gh-comments` | every 5m | Posts milestone comments to GH issues: decomposed → coder done → reviewer approved → PR created. |
+| `verify-dogfood` | weekly (Sat 8am) | Full exploratory QA session on staging — walks critical workflows, creates issues for bugs. |
+| `cfg-config-sync` | every 60m | Internal: syncs Hermes configuration files across profiles. |
 
 ## Profiles
 
 | Profile | Role |
 |---------|------|
-| `orchestrator` | Decomposes issues into parallel-safe sub-tasks, owns PR creation |
-| `coder` | Implements fixes in isolated git worktrees, never commits to main |
-| `code-reviewer` | Reviews implementations for correctness, security, conventions |
-| `qa` | 4-layer verification (API/DB/Browser/Version) + weekly dogfood |
+| `orchestrator` | Decomposes issues into parallel-safe sub-tasks, owns PR creation and merge. |
+| `coder` | Implements fixes in isolated git worktrees, never commits to main. |
+| `code-reviewer` | Reviews implementations for correctness, security, conventions. |
+| `qa` | 4-layer verification (API/DB/Browser/Version) + weekly dogfood. |
 
-## Cron Jobs
+## Merge Strategy
 
-| Job | Schedule | Purpose |
-|-----|----------|---------|
-| `gh-issues-to-kanban` | every 15m | Ingests labeled issues/PRs into kanban |
-| `pr-check-watch` | every 15m | Detects CI failures and merge conflicts on open PRs |
-| `staging-deploy-watch` | every 10m | Detects deploy failures, creates fix cards |
-| `pr-consolidation-watch` | every 10m | Creates PRs from done coder+reviewer pairs with version bumps |
-| `review-failed-watch` | every 5m | Auto-resolves blocked reviewer cards |
-| `worktree-collision-watch` | every 5m | Fixes worktree branch collisions |
-| `active-pr-guard-watch` | every 5m | Unsticks cards blocked by active PR guards |
-| `coder-review-required-watch` | every 5m | Auto-completes coder review-required blocks |
-| `hermes-config-sync` | every 60m | Mirrors agent config into project repo |
-| `prune-worktrees` | every 360m | Cleans stale git worktrees |
-| `qa-verify-deploy` | every 10m | 4-layer fix verification on staging deploys |
-| `dogfood-weekly` | Saturday 8 AM | Full-site exploratory QA scan |
+- **Type:** `gh pr merge --merge --delete-branch` (merge commit, not squash)
+- **Why:** Preserves branch commit hashes on main so `git merge-base --is-ancestor` works correctly. Squash merges destroyed hashes, making every branch appear "stranded."
+- **Guard:** Only merges when `mergeable == "MERGEABLE"` AND `mergeStateStatus == "clean"` (all CI checks green, no pending).
 
-<img width="454" height="854" alt="image" src="https://github.com/user-attachments/assets/1ab805ef-d687-4272-8edb-136fb6e7c0f0" />
+## Version Bump
+
+- **When:** After all merges in a tick, in `merge-ready-prs`.
+- **How:** `scripts/sync-version.sh --bump <level>` (patch for fixes, minor for features).
+- **Why:** One bump per tick avoids per-PR collision conflicts.
+
+## Naming Convention
+
+All cron jobs follow `{phase}-{action}` naming:
+
+```
+00-cfg · 01-ingest · 02-queue · 03-build · 04-merge · 05-audit · 06-verify · 07-sync
+```
+
+The phase prefix makes the pipeline sequence obvious in cron listings.
 
 ## Environment Variables
 
-Set in `~/.hermes/profiles/orchestrator/.env`:
-
-| Variable | Required | Purpose |
+| Variable | Profiles | Purpose |
 |----------|----------|---------|
-| `GITHUB_TOKEN` | Yes | GitHub API access |
-| `OPENROUTER_API_KEY` | Yes | LLM access for agent profiles |
-| `TELEGRAM_BOT_TOKEN` | Recommended | Cron job notifications |
-| `HERMES_PROJECT_REPO` | Auto-set | `owner/repo` slug |
-| `HERMES_PROJECT_DIR` | Auto-set | Local project path |
-| `HERMES_KANBAN_BOARD` | Auto-set | Board slug |
-| `HERMES_STAGING_URL` | Optional | For QA verification |
-| `NEON_DATABASE_URL` | Optional | For QA DB-layer checks |
-
-## Project-Specific Configuration
-
-The SOUL.md files contain a `## Project-Specific Context` section. Edit this to describe your application's architecture, endpoints, and verification patterns. The workflow adapts its QA checks accordingly.
-
-## Disaster Recovery
-
-The `hermes-config-sync` cron mirrors all agent config into `hermes-config/` in your project repo. To restore:
-
-```bash
-git clone https://github.com/owner/project.git
-cd project
-./hermes-config/restore.sh
-# Restore secrets manually
-vim ~/.hermes/.env
-hermes gateway restart
-```
-
-## Documentation
-
-- `CHANGELOG.md` — Version history and notable changes
-- `docs/hermes-agent-development-workflow.md` — Full pipeline reference with all jobs, skills, and safety protocols
-- Profile SOUL.md files — Per-profile identity documents with verification patterns
-- Skill SKILL.md files — Reusable procedural knowledge
-
-## Requirements
-
-- Hermes Agent installed
-- `gh` CLI authenticated
-- `python3`, `sqlite3`, `jq` available
-- Git repository with `main` branch
+| `HERMES_PROJECT_DIR` | all | Project repository path (falls back to `~/project` in setup) |
+| `HERMES_PROJECT_REPO` | all | GitHub repo in `owner/repo` format |
+| `HERMES_KANBAN_BOARD` | orchestrator | Kanban board name (defaults to `project-dev`) |
+| `HERMES_STAGING_URL` | qa | Staging deployment URL (defaults to `staging.project.com`) |
+| `GITHUB_TOKEN` | orchestrator, qa | GitHub API access |
+| `TELEGRAM_BOT_TOKEN` | orchestrator, qa | Telegram delivery for cron notifications |

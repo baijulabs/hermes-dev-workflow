@@ -1,5 +1,5 @@
 {
   "jobs": [],
-  "updated_at": "2026-08-01T18:35:00-04:00",
-  "_note": "QA cron jobs (qa-verify-deploy, dogfood-weekly) live in the ORCHESTRATOR profile cron/jobs.json.template — the QA profile has no daemon and its jobs.json is never ticked. State is still stored under profiles/qa/state/."
+  "updated_at": null,
+  "_note": "QA cron jobs (verify-deploy-qa, dogfood-weekly) live in the ORCHESTRATOR profile cron/jobs.json.template — the QA profile has no daemon and its jobs.json is never ticked. State is still stored under profiles/qa/state/."
 }

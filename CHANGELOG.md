@@ -43,8 +43,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - MIT license.
 
 ### Changed
-- **Genericized hardcoded project references.** Board name, project directory, repo slug, and QA agent identity are now templated via environment variables (`HERMES_KANBAN_BOARD`, `HERMES_PROJECT_DIR`, `HERMES_PROJECT_REPO`) with MyProject defaults, so the repo bootstraps onto any project.
-- Removed all references to the `my-project-operations` skill (not shipped in the portable repo); docs now reference `project-operations`.
+- **Genericized hardcoded project references.** Board name, project directory, repo slug, and QA agent identity are now templated via environment variables (`HERMES_KANBAN_BOARD`, `HERMES_PROJECT_DIR`, `HERMES_PROJECT_REPO`), so the repo bootstraps onto any project.
+- Removed all references to the `liberkyma-operations` skill (not shipped in the portable repo); docs now reference `project-operations`.
 
 ### Fixed
 - Hardcoded board name in the orchestrator `SOUL.md` templated for portability.

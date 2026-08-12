@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dev Workflow Pipeline</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#f8fafc;color:#0f172a;font-family:'JetBrains Mono',monospace;padding:40px}
+h1{font-size:20px;font-weight:700;color:#0f172a;margin-bottom:4px;display:flex;align-items:center;gap:10px}
+h1 span{font-size:11px;font-weight:400;color:#64748b}
+.subtitle{font-size:11px;color:#64748b;margin-bottom:30px;padding-bottom:16px;border-bottom:1px solid #e2e8f0}
+
+.section{margin-bottom:36px}
+.section-title{font-size:13px;font-weight:600;margin-bottom:12px;padding:6px 12px;border-radius:4px;display:inline-block}
+.section.happy .section-title{background:#fef3c7;color:#92400e;border:1px solid #fde68a}
+.section.hygiene .section-title{background:#e2e8f0;color:#334155;border:1px solid #cbd5e1}
+
+.pipeline{display:flex;flex-direction:column;gap:0;position:relative;padding-left:200px}
+.pipeline::before{content:'';position:absolute;left:192px;top:0;bottom:0;width:2px;background:#0369a1;opacity:0.2}
+
+.step{display:flex;align-items:flex-start;min-height:52px;position:relative;padding:6px 0}
+.step::before{content:'●';position:absolute;left:-13px;top:10px;font-size:10px;color:#0284c7}
+
+.step-label{position:absolute;left:-192px;width:170px;text-align:right;padding-top:8px;padding-right:12px}
+.step-label .cron{font-size:10px;font-weight:600;color:#0369a1}
+.step-label .freq{font-size:8px;color:#94a3b8;margin-top:2px}
+.step-label .edge-tag{font-size:8px;color:#64748b;margin-top:1px}
+
+.step-body{flex:1;padding-left:0}
+.step-title{font-size:12px;font-weight:600;color:#1e293b}
+.step-desc{font-size:10px;color:#64748b;margin-top:2px;line-height:1.5}
+
+.step-sub{display:flex;gap:8px;margin-top:4px;flex-wrap:wrap}
+.step-sub .edge{font-size:9px;background:#e0f2fe;color:#0369a1;padding:2px 8px;border-radius:3px;border:1px solid #bae6fd;white-space:nowrap}
+.step-sub .edge.purple{background:#f3e8ff;color:#7c3aed;border-color:#e9d5ff}
+.step-sub .edge.amber{background:#fef3c7;color:#b45309;border-color:#fde68a}
+.step-sub .edge.green{background:#d1fae5;color:#065f46;border-color:#a7f3d0}
+
+.flow-row{display:flex;align-items:center;gap:8px;padding:2px 0 2px 8px}
+.flow-row .arrow-icon{color:#94a3b8;font-size:10px}
+.flow-row .note{font-size:9px;color:#64748b}
+
+.divider{height:1px;background:#e2e8f0;margin:4px 0}
+
+.parallel-section{margin-top:20px}
+.parallel-section .section-title{background:#ede9fe;color:#5b21b6;border:1px solid #ddd6fe}
+
+.hygiene-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:8px}
+.hygiene-item{background:#ffffff;border:1px solid #e2e8f0;border-radius:6px;padding:10px 12px}
+.hygiene-item .group-tag{display:inline-block;font-size:8px;padding:1px 5px;border-radius:2px;margin-bottom:4px;font-weight:500}
+.hygiene-item .name{font-size:11px;font-weight:600;color:#1e293b}
+.hygiene-item .freq{font-size:9px;color:#94a3b8;margin-top:2px}
+.hygiene-item .desc{font-size:9px;color:#64748b;margin-top:4px;line-height:1.5}
+
+.group-audit{border-left:3px solid #f59e0b}
+.group-audit .group-tag{background:#fef3c7;color:#b45309}
+.group-audit .name{color:#b45309}
+.group-sync{border-left:3px solid #0284c7}
+.group-sync .group-tag{background:#e0f2fe;color:#0369a1}
+.group-sync .name{color:#0369a1}
+.group-verify{border-left:3px solid #7c3aed}
+.group-verify .group-tag{background:#f3e8ff;color:#5b21b6}
+.group-verify .name{color:#5b21b6}
+
+.footer{margin-top:40px;padding-top:16px;border-top:1px solid #e2e8f0;font-size:9px;color:#94a3b8}
+</style>
+</head>
+<body>
+
+<h1>⬡ Dev Workflow Pipeline <span>v2.0</span></h1>
+<div class="subtitle">Happy path: GH issue → staging deploy. Phased naming: <em>{phase}-{action}</em></div>
+
+<div class="section happy">
+<div class="section-title">👑 HAPPY PATH — Core CI/Deploy</div>
+<div class="pipeline">
+
+<div class="step">
+  <div class="step-label">
+    <div class="cron">ingest-gh-issues</div>
+    <div class="freq">every 5m</div>
+    <div class="edge-tag">sync</div>
+  </div>
+  <div class="step-body">
+    <div class="step-title">1. Issue Ingestion</div>
+    <div class="step-desc">Syncs GH issues labeled <code>ready-for-agent</code> → creates orchestrator kanban card. Ingestion only — never closes issues.</div>
+    <div class="step-sub">
+      <span class="edge">trigger: label `ready-for-agent`</span>
+      <span class="edge purple">output: orchestrator card (todo)</span>
+    </div>
+  </div>
+</div>
+
+<div class="flow-row">
+  <span class="arrow-icon">⤷</span>
+  <span class="note">auto-decompose: orchestrator splits issue → coder + reviewer cards with branch guardrails</span>
+</div>
+
+<div class="step">
+  <div class="step-label">
+    <div class="cron">queue-agent-processor</div>
+    <div class="freq">every 30m · 7-21</div>
+    <div class="edge-tag">dispatch</div>
+  </div>
+  <div class="step-body">
+    <div class="step-title">2. Agent Dispatch</div>
+    <div class="step-desc">Claims ready cards → dispatches coder (implements fix in worktree) + reviewer (approves)</div>
+    <div class="step-sub">
+      <span class="edge">coder writes fix, pushes worktree</span>
+      <span class="edge purple">reviewer approves → both cards done</span>
+    </div>
+  </div>
+</div>
+
+<div class="flow-row">
+  <span class="arrow-icon">⤷</span>
+  <span class="note">both cards marked done, branch has unique commits vs main</span>
+</div>
+
+<div class="step">
+  <div class="step-label">
+    <div class="cron">build-consolidate-prs</div>
+    <div class="freq">every 5m</div>
+    <div class="edge-tag">build</div>
+  </div>
+  <div class="step-body">
+    <div class="step-title">3. PR Consolidation</div>
+    <div class="step-desc">Finds done coder+reviewer pairs by GH issue → merges worktrees → creates consolidation PR with <code>Closes #N</code></div>
+    <div class="step-sub">
+      <span class="edge">creates `fix/consolidate-gh-N`</span>
+      <span class="edge purple">0-commits check → auto-archive</span>
+      <span class="edge amber">dedup by commit hash</span>
+    </div>
+  </div>
+</div>
+
+<div class="flow-row">
+  <span class="arrow-icon">⤷</span>
+  <span class="note">edge case handlers (every 5m): build-reviewer-resolve · build-reviewer-approve · build-coder-resolve</span>
+</div>
+
+<div class="flow-row">
+  <span class="arrow-icon">⤷</span>
+  <span class="note">PR created → CI triggers (test jobs only — deploy does NOT run on PR creation)</span>
+</div>
+
+<div class="step">
+  <div class="step-label">
+    <div class="cron">merge-ready-prs</div>
+    <div class="freq">every 10m</div>
+    <div class="edge-tag">merge</div>
+  </div>
+  <div class="step-body">
+    <div class="step-title">4. PR Merge</div>
+    <div class="step-desc">Merges PRs where BOTH: mergeable=MERGEABLE AND mergeStateStatus=clean (all CI green). Uses <code>--merge</code> (preserves commit hashes). Single version bump per tick.</div>
+    <div class="step-sub">
+      <span class="edge green">requires CI: clean (no pending, no failing)</span>
+      <span class="edge">gh pr merge --merge --delete-branch</span>
+      <span class="edge purple">deploy cooldown gate</span>
+    </div>
+  </div>
+</div>
+
+<div class="flow-row">
+  <span class="arrow-icon">⤷</span>
+  <span class="note">PR merged to main → deploy.yml triggers on pull_request_target closed + merged</span>
+</div>
+
+<div class="step">
+  <div class="step-label">
+    <div class="cron">ingest-deploy-failures</div>
+    <div class="freq">every 15m</div>
+    <div class="edge-tag">detect</div>
+  </div>
+  <div class="step-body">
+    <div class="step-title">5. Deploy Failure Detection</div>
+    <div class="step-desc">Checks latest main deploy runs at <strong>job level</strong> (Deploy to Staging job conclusion, not workflow). Creates fix cards on failure.</div>
+    <div class="step-sub">
+      <span class="edge">checks Deploy to Staging job conclusion</span>
+      <span class="edge purple">dedup via kanban in-flight cards</span>
+    </div>
+  </div>
+</div>
+
+<div class="flow-row">
+  <span class="arrow-icon">⤷</span>
+  <span class="note">deploy succeeds → staging updated</span>
+</div>
+
+<div class="step">
+  <div class="step-label">
+    <div class="cron">verify-deploy-qa</div>
+    <div class="freq">every 10m</div>
+    <div class="edge-tag">verify</div>
+  </div>
+  <div class="step-body">
+    <div class="step-title">6. Post-Deploy QA</div>
+    <div class="step-desc">Validates staging health (healthz, critical flows), maps changed files → affected E2E steps. Creates GH issues for bugs found.</div>
+    <div class="step-sub">
+      <span class="edge">health check + critical flows</span>
+      <span class="edge purple">creates GH issues for found bugs</span>
+    </div>
+  </div>
+</div>
+
+</div>
+</div>
+
+<div class="section happy parallel-section">
+<div class="section-title">⟳ PARALLEL DETECTION — CI Failures on Open PRs</div>
+<div class="pipeline">
+<div class="step">
+  <div class="step-label">
+    <div class="cron">ingest-ci-failures</div>
+    <div class="freq">every 5m</div>
+    <div class="edge-tag">detect</div>
+  </div>
+  <div class="step-body">
+    <div class="step-title">CI Failure &amp; Conflict Detection</div>
+    <div class="step-desc">Monitors open PRs for failing CI checks or MERGEABLE=CONFLICTING. Enqueues fix tasks → agent creates coder+reviewer cards. For conflicts: fix pushed directly to existing PR branch (no new PR created).</div>
+    <div class="step-sub">
+      <span class="edge">re-triggers CI when PR HEAD changes</span>
+      <span class="edge amber">conflicts → fix on existing PR branch</span>
+      <span class="edge purple">dedup via agent queue</span>
+    </div>
+  </div>
+</div>
+</div>
+</div>
+
+<div class="section hygiene" style="margin-top:36px">
+<div class="section-title">🧹 HYGIENE — Maintenance &amp; Cleanup</div>
+<div class="hygiene-grid">
+
+<div class="hygiene-item group-audit">
+  <div class="group-tag">AUDIT</div>
+  <div class="name">audit-stranded-worktrees</div>
+  <div class="freq">every 2h</div>
+  <div class="desc">Flags worktree branches with unique commits not on main and no pending kanban work. Creates triage GH issue. Cross-checks kanban for in-progress cards.</div>
+</div>
+
+<div class="hygiene-item group-audit">
+  <div class="group-tag">AUDIT</div>
+  <div class="name">audit-worktree-collisions</div>
+  <div class="freq">every 5m</div>
+  <div class="desc">Detects worktree conflicts — same branch checked out by multiple worktrees. Auto-assigns unique names.</div>
+</div>
+
+<div class="hygiene-item group-audit">
+  <div class="group-tag">AUDIT</div>
+  <div class="name">audit-pr-guard</div>
+  <div class="freq">every 5m</div>
+  <div class="desc">Enforces PR guard: rejects workflow_dispatch from non-main branches, validates main-tip requirement.</div>
+</div>
+
+<div class="hygiene-item group-audit">
+  <div class="group-tag">AUDIT</div>
+  <div class="name">audit-archive-cancelled</div>
+  <div class="freq">every 15m</div>
+  <div class="desc">Archives cancelled or timed-out kanban cards, cleans up stale state.</div>
+</div>
+
+<div class="hygiene-item group-audit">
+  <div class="group-tag">AUDIT</div>
+  <div class="name">audit-prune-worktrees</div>
+  <div class="freq">every 48h</div>
+  <div class="desc">Deletes stale .worktrees/ directories older than 7 days. Runs git worktree prune.</div>
+</div>
+
+<div class="hygiene-item group-audit">
+  <div class="group-tag">AUDIT</div>
+  <div class="name">audit-kanban-health</div>
+  <div class="freq">every 3h</div>
+  <div class="desc">Kanban DB integrity checks — detects corruption, runs SQLite integrity_check.</div>
+</div>
+
+<div class="hygiene-item group-sync">
+  <div class="group-tag">SYNC</div>
+  <div class="name">sync-gh-comments</div>
+  <div class="freq">every 5m</div>
+  <div class="desc">Posts milestone comments to GH issues: decomposed → coder done → reviewer approved → PR created. Idempotent state tracking.</div>
+</div>
+
+<div class="hygiene-item group-verify">
+  <div class="group-tag">VERIFY</div>
+  <div class="name">verify-dogfood</div>
+  <div class="freq">weekly (Sat 8am)</div>
+  <div class="desc">Full exploratory QA session on staging — walks critical workflows, creates issues for bugs found.</div>
+</div>
+
+<div class="hygiene-item group-sync">
+  <div class="group-tag">SYNC</div>
+  <div class="name">cfg-config-sync</div>
+  <div class="freq">every 60m</div>
+  <div class="desc">Internal: syncs Hermes configuration files across profiles.</div>
+</div>
+
+</div>
+</div>
+
+<div class="footer">
+v2.0 · 19 cron jobs · 9 happy path · 9 hygiene · 1 config
+</div>
+
+</body>
+</html>
