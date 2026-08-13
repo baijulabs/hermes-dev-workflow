@@ -55,7 +55,7 @@
     {
       "id": "job-queue-agent-processor",
       "name": "queue-agent-processor",
-      "prompt": "Process the agent queue for ${HERMES_KANBAN_BOARD:-project-dev}. Claims ready cards and dispatches them to coder/reviewer workers. Runs during business hours only.",
+      "prompt": "Process the agent queue for ${HERMES_KANBAN_BOARD:-project-dev}. Claims ready cards and dispatches them to coder/reviewer workers. Runs during business hours only.\n\n## Also: Triage stranded worktree GH issues\n\nScan the repo for open `triage`-labeled GH issues with titles matching `stale-fix: stranded worktree *`. For each:\n\n1. Extract the branch name from the issue title.\n2. If the branch doesn't exist, close the issue with comment.\n3. Check if commits from the branch are already merged to main (search commit subjects).\n4. If all commits on main → close the issue.\n5. If commits NOT on main → create a kanban fix card. Close the issue referencing the card.",
       "skills": ["kanban-orchestrator", "kanban-ci-automation", "github-pr-workflow"],
       "model": "deepseek/deepseek-v4-flash",
       "provider": "openrouter",
