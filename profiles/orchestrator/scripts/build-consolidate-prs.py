@@ -285,13 +285,13 @@ def create_consolidated_pr(gh_num, entries, seen_commit_sets):
     # Merge each valid branch sequentially
     for entry in valid_entries:
         branch = entry["branch"]
-        rc, out, err = run(["git", "merge", "--no-edit", "-X", "theirs", branch])
+        rc, out, err = run(["git", "merge", "--no-edit", "-X", "ours", branch])
         if rc != 0:
             # Try cherry-pick as fallback
             hashes = get_commit_hashes(branch)
             if hashes:
                 for h in hashes:
-                    run(["git", "cherry-pick", "--no-edit", "-X", "theirs", h])
+                    run(["git", "cherry-pick", "--no-edit", "-X", "ours", h])
         # Check if this branch exists on origin and push if not
         rc2, _, _ = run(["git", "branch", "-r", "--list", f"origin/{branch}"])
         if not rc2 or not rc2 == 0:  # if not on origin, push it
