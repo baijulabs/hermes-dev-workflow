@@ -407,9 +407,10 @@ def main():
 
     if created > 0:
         print(f"\nCreated {created} new PR(s).")
-    elif not should_report("build-consolidate-prs", f"{created}|{time.time()}"):
+    elif not should_report("build-consolidate-prs", f"{created}"):
         # Suppress duplicate "nothing to do" reports
-        pass
+        import os, sys
+        os._exit(0)
 
 if __name__ == "__main__":
     main()
