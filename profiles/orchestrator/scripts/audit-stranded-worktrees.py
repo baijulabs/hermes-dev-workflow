@@ -17,10 +17,14 @@ import re
 import subprocess
 import sys
 import time
+import json
 
-REPO_DIR = "/home/user/Project"
-REPO = "${HERMES_PROJECT_REPO:-owner/project}"
-KANBAN_DB = os.path.expanduser("~/.hermes/kanban/boards/${HERMES_KANBAN_BOARD:-project-dev}/kanban.db")
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "lib"))
+from report_utils import should_report
+
+REPO_DIR = "/home/julianbeggs/Liberkyma"
+REPO = "baijulabs/Liberkyma"
+KANBAN_DB = os.path.expanduser("~/.hermes/kanban/boards/liberkyma-dev/kanban.db")
 MAX_PER_RUN = 5  # avoid hammering the API
 
 def run(cmd, cwd=REPO_DIR, timeout=60):
@@ -119,9 +123,11 @@ def main():
         body += f"**{count} unique commits** behind main.\n"
         if local_only:
             body += "**Not on origin** — local only.\n"
-        body += "\n### Commits\n"
-        for c in commits:
+        body += "\n### Commits (first 30)\n"
+        for c in commits[:30]:
             body += f"- {c[:80]}\n"
+        if len(commits) > 30:
+            body += f"- ... and {len(commits) - 30} more commits\n"
 
         # Resolve GH issues referenced in commits
         gh_issues = set()
@@ -165,6 +171,9 @@ def main():
 
     if created:
         print(f"\nFlagged {created} stranded worktree fix(es) as GH issues for triage.")
+    elif not should_report("audit-stranded-worktrees", json.dumps({"created": created, "skipped": [l for l in locals().get('_output_lines', [])]}, sort_keys=True)):
+        # Suppress duplicate "nothing new" reports
+        pass
 
 if __name__ == "__main__":
     main()

@@ -17,6 +17,10 @@ import sys
 import time
 from collections import defaultdict
 
+# Add lib to path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "lib"))
+from report_utils import should_report
+
 KANBAN_DIR = os.path.expanduser("~/.hermes/kanban/boards")
 REPO_DIR = "/home/julianbeggs/Liberkyma"
 REPO = "baijulabs/Liberkyma"
@@ -403,6 +407,9 @@ def main():
 
     if created > 0:
         print(f"\nCreated {created} new PR(s).")
+    elif not should_report("build-consolidate-prs", f"{created}|{time.time()}"):
+        # Suppress duplicate "nothing to do" reports
+        pass
 
 if __name__ == "__main__":
     main()
