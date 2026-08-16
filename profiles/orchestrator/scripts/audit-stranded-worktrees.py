@@ -66,6 +66,10 @@ def main():
         # Check if branch tip is an ancestor of main (content merged via other path)
         rc, out, _ = run(["git", "rev-parse", "--verify", f"origin/{branch}"])
         ref = f"origin/{branch}" if rc == 0 else branch
+        # Content-based check: if no files differ from main, content is already merged
+        rc2, diff_out, _ = run(["git", "diff", "origin/main..origin/" + branch, "--stat"], timeout=10)
+        if rc2 == 0 and not diff_out.strip():
+            continue  # content already on main (squash-merged)
         rc, _, _ = run(["git", "merge-base", "--is-ancestor", f"{ref}", "origin/main"], timeout=10)
         if rc == 0:
             continue  # already in main via consolidation

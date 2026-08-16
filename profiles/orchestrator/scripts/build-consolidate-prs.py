@@ -24,8 +24,47 @@ from report_utils import should_report
 KANBAN_DIR = os.path.expanduser("~/.hermes/kanban/boards")
 REPO_DIR = "/home/julianbeggs/Liberkyma"
 REPO = "baijulabs/Liberkyma"
-MAX_CONSOLIDATE_PER_RUN = 2  # max consolidation PRs per tick
-MAX_INDIVIDUAL_PER_RUN = 3   # max individual PRs per tick
+MAX_CONSOLIDATE_PER_RUN = 2  # base limit — scales up when backlog is deep
+MAX_INDIVIDUAL_PER_RUN = 3
+RETRY_LIMIT = 3  # max consolidation attempts before skipping for 24h
+STATE_DIR = os.path.expanduser("~/.hermes/profiles/orchestrator/state")
+
+def load_retry_state():
+    path = os.path.join(STATE_DIR, "consolidate-retries.json")
+    if os.path.exists(path):
+        try:
+            return json.load(open(path))
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {}
+
+def save_retry_state(state):
+    os.makedirs(STATE_DIR, exist_ok=True)
+    json.dump(state, open(os.path.join(STATE_DIR, "consolidate-retries.json"), "w"))
+
+def is_blocked(gh_num):
+    """Check if a GH issue has exceeded retry limit within 24h."""
+    state = load_retry_state()
+    key = str(gh_num)
+    if key not in state:
+        return False
+    entry = state[key]
+    if time.time() - entry["last"] > 86400:  # 24h cooldown
+        del state[key]
+        save_retry_state(state)
+        return False
+    return entry["count"] >= RETRY_LIMIT
+
+def record_failure(gh_num):
+    """Increment retry count for a GH issue."""
+    state = load_retry_state()
+    key = str(gh_num)
+    if key not in state:
+        state[key] = {"count": 0, "last": 0}
+    state[key]["count"] += 1
+    state[key]["last"] = int(time.time())
+    save_retry_state(state)
+    return state[key]["count"]
 
 def gh_issue_is_open(issue_num):
     result = subprocess.run(
@@ -305,6 +344,7 @@ def create_consolidated_pr(gh_num, entries, seen_commit_sets):
     rc, out, _ = run(["git", "diff", "--name-only", "--diff-filter=U"])
     if rc == 0 and out:
         print(f"  ⚠️  Unresolved conflicts in {branch_name}, aborting consolidation")
+        record_failure(gh_num)
         run(["git", "merge", "--abort"])
         run(["git", "checkout", "origin/main"])
         run(["git", "branch", "-D", branch_name])
@@ -384,17 +424,39 @@ def main():
             # Group cards by GH issue
             to_consolidate, to_individual = group_cards_by_issue(db_path, int(time.time()) - 604800)  # 7 days
 
-            # Process consolidation groups first (batch-limited)
+            # Sort: process NEWEST completed groups first
+            to_consolidate_sorted = sorted(to_consolidate.items(),
+                key=lambda x: max(e.get("completed_at", 0) for e in x[1]),
+                reverse=True)
+
+            # Count blocked issues
+            skipped_blocked = [gh for gh, _ in to_consolidate_sorted if is_blocked(gh)]
+
+            # Dynamic batch scaling
+            active_groups = len(to_consolidate_sorted) - len(skipped_blocked)
+            max_consolidate = MAX_CONSOLIDATE_PER_RUN
+            if active_groups > MAX_CONSOLIDATE_PER_RUN * 3:
+                max_consolidate = min(MAX_CONSOLIDATE_PER_RUN * 3, 8)
+                print(f"⚡ Backlog detected ({active_groups} pending) — scaling batch limit to {max_consolidate}")
+            elif active_groups > MAX_CONSOLIDATE_PER_RUN:
+                print(f"⚠️ {active_groups} consolidation groups pending")
+
+            # Process consolidation groups (newest-first, skip blocked)
             consolidated = 0
-            for gh_num, entries in to_consolidate.items():
-                if consolidated >= MAX_CONSOLIDATE_PER_RUN:
+            for gh_num, entries in to_consolidate_sorted:
+                if is_blocked(gh_num):
+                    print(f"  ⏭️  GH-{gh_num} skipped (failed {RETRY_LIMIT}+ attempts, 24h cooldown)")
+                    continue
+                if consolidated >= max_consolidate:
                     break
                 created += create_consolidated_pr(gh_num, entries, seen_commit_sets)
                 consolidated += 1
 
-            # Process individual cards (batch-limited)
+            # Process individual cards (newest-first)
+            to_individual_sorted = sorted(to_individual,
+                key=lambda e: e.get("completed_at", 0), reverse=True)
             individual = 0
-            for entry in to_individual:
+            for entry in to_individual_sorted:
                 if individual >= MAX_INDIVIDUAL_PER_RUN:
                     break
                 created += create_individual_pr(entry, seen_commit_sets)
