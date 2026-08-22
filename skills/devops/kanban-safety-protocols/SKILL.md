@@ -218,7 +218,52 @@ This skill is the umbrella for any cross-cutting safety pattern that doesn't fit
 4. Document the **recovery procedure** — how to undo if it happens anyway
 5. Update all four locations: SOUL.md (orchestrator identity → card body format), AGENTS.md (coder instructions), and kanban-worker skill (worktree setup + Do NOT list)
 
-## Coder Review-Required Block Auto-Complete
+#
+## CI/Deploy YAML Change Guardrail
+
+### Problem
+
+Changes to CI/deploy workflow files (`.github/workflows/*.yml`, `Dockerfile`, `frontend/lighthouserc.cjs`) bypass the PR test suite entirely — the workflow YAML is never executed during the review gate. Latent bugs like wrong secret references, broken glob patterns, or upload-artifact@v6 defaults only surface on the first real run after merge.
+
+Real failure modes caught by this guardrail:
+
+| Gotcha | Symptom | Root Cause |
+|--------|---------|------------|
+| `upload-artifact@v6` silently ignores dotfiles | Artifact says "No files found" but reports exist on disk | Default `include-hidden-files: false` — `.lighthouseci/` starts with `.`, so the glob returns empty. `hashFiles()` uses the same glob pattern and also returns empty. |
+| `npx lhci` resolves to wrong package | "Hello, this is AnupamAS01!" printed instead of Lighthouse audit | The npm package `lhci` is a squat/placeholder (`description: "placeholder anupamas0x1"`). The real CLI is `@lhci/cli`. |
+| `environment: staging` secret scoping | Missing secret on first run | Secrets in named environments only resolve when the job has `environment:` set. |
+| `github.event_name` gating | Job silently skipped on `workflow_dispatch` | Condition only allowed `pull_request_target`. Manual deploys never run the job — was correct when added but broke when deploy flow changed. |
+
+### Three-Layer Defense
+
+#### Layer 1 — Post-Change Validation (Orchestrator must run)
+
+After ANY change to CI/deploy YAML or workflow-adjacent files (lighthouserc, Dockerfile, scripts invoked by CI), the orchestrator MUST:
+
+1. **Trigger a `workflow_dispatch`** on the PR branch (or main if already merged) and verify the job completes successfully:
+   ```bash
+   gh workflow run deploy.yml --ref <branch> --repo <owner>/<repo>
+   ```
+2. **Inspect the job logs** for the changed step — do not rely on the run's green checkmark alone. A skipped job or a hidden step failure still shows a green run.
+3. **Check the artifact** if the change touches upload steps — verify the artifact exists and has the expected files.
+
+#### Layer 2 — Known-Problem Documentation (This section)
+
+When writing new CI steps, check for these common upload-artifact@v6 pitfalls:
+
+- **`include-hidden-files: true`** — Always set when the path is a dot-directory (`.lighthouseci/`, `.coverage/`, `.nyc_output/`). The default `false` causes both `hashFiles()` and the upload to silently return empty.
+- **`if-no-files-found: error`** — Set to `error` instead of the default `warn` during development; switch to `warn` after you've confirmed the glob works. This catches glob mismatches instead of silently skipping.
+- **`npx` package resolution** — Never use `npx <short-name>` for tools that have squat packages on npm. Always use the full scoped name (`npx @lhci/cli`, `npx @angular/cli`, etc.). Verify with `npm view <name>` before committing.
+
+#### Layer 3 — Recovery (When the guardrail fails)
+
+If a CI change hits production and fails:
+
+1. **Immediately revert** the YAML change to the previous known-good version
+2. **Create a kaban fix card** with the diagnostic findings — never cherry-pick a second fix directly to main
+3. **Tag the root cause** in the `kanban-safety-protocols` skill if it's a new gotcha pattern
+
+# Coder Review-Required Block Auto-Complete
 
 ### Problem
 

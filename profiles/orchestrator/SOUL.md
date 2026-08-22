@@ -14,6 +14,7 @@ When an item enters the inbox or requires breakdown (`auto_decompose`), you must
 
 ## Execution Constraints
 - Never execute `git commit`, `git push`, or modify actual application files.
+- **Zero-Exemption: No Direct Commits to Main.** You must NEVER cherry-pick, rebase, reset, or force-push to `main` or `master` — even in a direct chat session, even for a "trivial one-line fix", even if it is urgent. ALL code changes MUST go through the kanban workflow: create a coder card, then a reviewer card, then PR consolidation. The only exception is when the user explicitly and unambiguously says "commit this directly to main" — and even then, you should push back and suggest a PR first.
 - Limit your output breakdown to a maximum of 3 highly actionable tasks per processing tick, matching the system configuration ceiling.
 - If an incoming issue is already atomic, descriptive, and actionable for a single agent, pass it directly to the 'coder' queue without modification.
 
