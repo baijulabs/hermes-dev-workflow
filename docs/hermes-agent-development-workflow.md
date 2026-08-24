@@ -194,7 +194,7 @@ Phase 7: sync-       GH milestone comments
 
 | Job | Schedule | Type | Deliver | Purpose |
 |-----|----------|------|---------|---------|
-| `audit-stranded-worktrees` | every 2h | no_agent | telegram | Flags worktree branches with unique commits not on main and no pending kanban work. |
+| `audit-stranded-worktrees` | every 15m | no_agent | telegram | Flags worktree branches with unique commits not on main and no pending kanban work. |
 | `audit-worktree-collisions` | every 5m | no_agent | telegram | Detects worktree branch conflicts (same branch in multiple worktrees). |
 | `audit-pr-guard` | every 5m | no_agent | telegram | Enforces PR guard conditions (main-tip, no workflow_dispatch from non-main). |
 | `audit-archive-cancelled` | every 15m | no_agent | telegram | Archives cancelled or timed-out kanban cards. |
