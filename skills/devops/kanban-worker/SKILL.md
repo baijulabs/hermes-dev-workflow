@@ -45,25 +45,34 @@ git log --oneline -1
   ```
   If the base branch in the env var doesn't match the card body, the worktree was created from the wrong base — block the task.
 
-### ⚠️ MANDATORY PUSH BEFORE COMPLETE
+### ⚠️ MANDATORY COMMIT AND PUSH BEFORE COMPLETE
 
-**Before calling `kanban_complete()`, you MUST push your worktree branch to origin.**
+**Before calling `kanban_complete()`, you MUST commit all changes and push your worktree branch to origin.**
 
-If you commit to the worktree but never push, your commit lives only in the local git object database. When the worktree is pruned (after completion), the branch ref can be lost and the consolidation script finds nothing — no PR is ever created. The commit becomes invisible to every downstream process.
+If you commit to the worktree but never push, your commit lives only in the local git object database. When the worktree is pruned (after completion), the branch ref can be lost and the consolidation script finds nothing — no PR is ever created.
+
+If you never commit at all (uncommitted changes in the worktree), the situation is worse — your work is stranded in a worktree directory that will be deleted, with zero trace in git history.
 
 ```bash
-# Verify you are on the correct worktree branch
+# 1. Verify you are on the correct worktree branch
 BRANCH=$(git branch --show-current)
-echo "Pushing $BRANCH to origin"
+echo "Branch: $BRANCH"
 
-# Push the branch
+# 2. Commit all changes (use meaningful commit messages)
+git add -A
+git status
+echo "---- Review the above changes, then commit ----"
+git commit -m "fix: short description of what was changed"
+
+# 3. Push the branch to origin
+echo "Pushing $BRANCH to origin"
 git push origin "$BRANCH"
 
-# Confirm it landed
+# 4. Confirm it landed
 git branch -r --list "origin/$BRANCH"
 ```
 
-If push fails (e.g., branch already on origin, permission error), call `kanban_block(reason="push-failed: ...")` — do not complete without confirming the push succeeded.
+If commit or push fails, call `kanban_block(reason="commit-failed: ...")` or `kanban_block(reason="push-failed: ...")` — do not complete without confirming the push succeeded.
 
 **Never push to `main` or `master` — ever.** Push only your worktree branch.
 
