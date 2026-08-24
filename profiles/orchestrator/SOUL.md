@@ -58,13 +58,18 @@ Do NOT wait for human input on review-failed cards — the reviewer's findings a
 
 When decomposing a task, create cards in this order:
 
-1. **Coder card** — capture the returned `task_id`
-2. **Reviewer card** — with `parents=[coder_task_id]`, referencing the coder card's expected output
+1. **Coder card** — create with `workspace="worktree"`, capture the returned `task_id` and `branch_name`
+2. **Reviewer card** — create with `workspace="worktree"`, `branch=<coder_branch>`, and `parents=[coder_task_id]`, referencing the coder card's expected output
+
+**⚠️ CRITICAL: Reviewer cards MUST use `workspace="worktree"` with the coder's branch name.** The default `workspace_kind=scratch` gives the reviewer an empty temp directory — they cannot inspect the coder's files, verify commits were made, or check the diff. See `kanban-safety-protocols` skill's "Reviewer Workspace Blindness" section for the full failure analysis.
+
+After creating the coder card, retrieve its branch name via `kanban_show(task_id=coder_id)["branch_name"]` and pass it as the reviewer's `branch` parameter. This ensures the reviewer's worktree checks out the same branch the coder worked on.
 
 The reviewer card body should link back to the coder card:
 ```
 Review implementation of [GH-{{ID}}] Sub-component
 Coder task: {{coder_task_id}}
+Coder branch: {{coder_branch}}
 Files changed: [list of expected files]
 Verification: [expected test output]
 ```

@@ -1,7 +1,7 @@
 ---
 name: kanban-orchestrator
 description: Decomposition playbook + anti-temptation rules for an orchestrator profile routing work through Kanban. The "don't do the work yourself" rule and the basic lifecycle are auto-injected into every kanban worker's system prompt; this skill is the deeper playbook when you're specifically playing the orchestrator role.
-version: 3.11.0
+version: 3.12.0
 platforms: [linux, macos, windows]
 environments: [kanban]
 metadata:
@@ -209,20 +209,34 @@ Tell them what you created in plain prose, naming the actual profiles you used:
 
 **Mandatory review gate (implementer → reviewer):** Every coder card MUST be paired with a code-reviewer card. Create the coder card first, capture its `task_id`, then create the reviewer card with `parents=[coder_task_id]`. The reviewer auto-promotes to `ready` when the coder completes. Skip only for docs-only, config-only, or version-bump changes.
 
+**⚠️ CRITICAL — Reviewer must be `worktree` workspace, not default `scratch`.** The default `workspace_kind=scratch` gives the reviewer an empty temp directory — they cannot inspect the coder's files. **71% of reviewer cards (447/626) have this blindness.** Always set `workspace="worktree"` and pass the coder's branch name so the reviewer can verify the coder's actual work.
+
 ```python
 # Capturing task_id from kanban_create return value
 coder_task = kanban_create(
     title="[GH-42] implement rate limiter",
     assignee="coder",
+    workspace="worktree",
     body="...",
 )
 coder_id = coder_task["task_id"]
 
+# Retrieve the branch name the coder's worktree was created on
+coder_detail = kanban_show(task_id=coder_id)
+coder_branch = coder_detail.get("branch_name", "")
+
+# Create reviewer — MUST use worktree workspace and coder's branch
 reviewer_task = kanban_create(
     title="review: [GH-42] rate limiter",
     assignee="code-reviewer",
-    body=f"Review implementation of [GH-42] rate limiter\nCoder task: {coder_id}\nFiles: rate_limiter.py, tests/test_rate_limiter.py\nVerification: 14 tests must pass",
+    workspace="worktree",                          # <-- required: makes reviewer inspectable
+    branch=coder_branch,                           # <-- required: same branch as coder
     parents=[coder_id],
+    body=f"Review implementation of [GH-42] rate limiter\n"
+         f"Coder task: {coder_id}\n"
+         f"Coder branch: {coder_branch}\n"
+         "Files: rate_limiter.py, tests/test_rate_limiter.py\n"
+         "Verification: 14 tests must pass",
 )
 ```
 

@@ -1,7 +1,7 @@
 ---
 name: kanban-safety-protocols
 description: Safety guardrails for kanban task execution — branch protection (prevent commits to main/wrong branches), worktree verification, and cross-cutting safety patterns that protect the repo from automation errors.
-version: 2.9.0
+version: 2.10.0
 platforms: [linux, macos, windows]
 environments: [kanban]
 metadata:
@@ -807,3 +807,314 @@ sqlite3 ~/.hermes/kanban/boards/<board-slug>/kanban.db \
 - When creating replacement coder+reviewer chains, archive the old cards (don't leave them cancelled)
 - After bulk operations (ghost sweep, corruption recovery), sweep for cancelled cards
 - The `review-failed-watch` cron archives old blocked reviewers automatically
+
+---
+
+## Reviewer Workspace Blindness — 71% of Reviewer Cards Can't Inspect Coder Files
+
+### Problem
+
+When the orchestrator creates a code-reviewer card without specifying `workspace_kind`, the kanban system defaults to `scratch` — a fresh empty temp directory. The reviewer has **no access to the coder's worktree** and cannot inspect actual files, verify code quality, check test results, or confirm that the coder committed their work.
+
+The reviewer can only read the coder's `kanban_complete(summary=...)` and metadata — a self-report that may be inaccurate or incomplete.
+
+### Evidence
+
+As of Aug 2026, 447 out of 626 code-reviewer cards (71%) were created with `workspace_kind=scratch`. Only 179 used `worktree`.
+
+**Production failure (GH-1731, Aug 24 2026):**
+- Coder modified files but NEVER committed (`git status` showed dirty worktree)
+- Coder called `kanban_complete()` — task marked `done`
+- Reviewer spawned with `workspace_kind=scratch` — empty temp dir, no way to see the coder's uncommitted changes
+- Reviewer completed in 30 seconds: "Code changes correctly implement LLM context injection... and pass backend tests"
+- Result: Coder's work was stranded in a dirty worktree that was later pruned. Zero trace in git history. No PR was ever created. The orchestrator had to manually commit+push the work after discovery.
+
+### Root Cause
+
+The orchestrator's SOUL.md (card body format) and the decomposition instructions in `kanban-orchestrator` skill do not include `workspace_kind="worktree"` when creating reviewer cards:
+
+```python
+# Current — reviewer gets scratch (default):
+kanban_create(
+    title="Review: [GH-42] rate limiter",
+    assignee="code-reviewer",
+    parents=[coder_id],
+)
+
+# Correct — reviewer should inspect the coder's actual work:
+kanban_create(
+    title="Review: [GH-42] rate limiter",
+    assignee="code-reviewer",
+    workspace="worktree",                          # <-- required: makes reviewer inspectable
+    branch="wt/t_<coder-task-id>",                 # <-- connects reviewer to coder's branch
+    parents=[coder_id],
+)
+```
+
+### Three-Layer Defense
+
+#### Layer 1 — Card Creation (Orchestrator creates correctly)
+
+Every code-reviewer card MUST include:
+1. `workspace="worktree"` — so the reviewer gets a git worktree, not a scratch dir
+2. `branch="wt/t_<coder-task-id>"` — so the worktree checks out the coder's branch (this requires the orchestrator to capture the coder's `task_id` AND `branch_name`)
+3. The reviewer card body should include the coder's branch name for verification
+
+```python
+# Capture coder info during creation
+coder_task = kanban_create(
+    title="[GH-42] implement rate limiter",
+    assignee="coder",
+    workspace="worktree",
+    # branch=... or omitted for auto-derive
+)
+coder_id = coder_task["task_id"]
+
+# Retrieve the branch name from kanban_show
+coder_detail = kanban_show(task_id=coder_id)
+coder_branch = coder_detail.get("branch_name", "")
+
+# Create reviewer with the same workspace
+kanban_create(
+    title="Review: [GH-42] rate limiter",
+    assignee="code-reviewer",
+    workspace="worktree",
+    branch=coder_branch,  # <-- same branch as coder
+    parents=[coder_id],
+    body=(
+        "Review implementation of [GH-42] rate limiter\n"
+        f"Coder task: {coder_id}\n"
+        f"Coder branch: {coder_branch}\n"
+        "Files: rate_limiter.py, tests/test_rate_limiter.py\n"
+        "Verification: 14 tests must pass"
+    ),
+)
+```
+
+**This MUST be baked into the orchestrator's SOUL.md card body format.** Without it, every decomposition session creates blind reviewers.
+
+#### Layer 2 — Reviewer Workflow (Verify Before Approving)
+
+The reviewer card body should instruct the reviewer to verify the coder's git state before approving:
+
+```bash
+# 1. Confirm you're on the coder's branch
+git branch --show-current
+# Expected: wt/t_<coder-task-id> or fix/<name>
+
+# 2. Check that the coder actually committed
+git status --short
+# Expected: nothing (empty = all changes committed)
+
+# 3. Check that the commits are not just main already
+git log --oneline origin/main..HEAD
+# Expected: non-empty (coder's unique commits)
+
+# 4. Check that the branch was pushed
+git branch -r --list "origin/$(git branch --show-current)"
+# Expected: non-empty (branch exists on origin)
+
+# 5. Read the diff
+git diff origin/main..HEAD --stat
+```
+
+These 5 commands are the minimum verification before approving. If any step fails, the reviewer should block with `review-failed: commit-pending:` or `review-failed: not-pushed:` or `review-failed: already-on-main:`.
+
+#### Layer 3 — Auditor Detection (Catch existing blind pairs)
+
+Query the kanban DB for done coder+reviewer pairs where the reviewer had `workspace_kind=scratch`. These pairs completed without structural verification — their approvals are not trustworthy:
+
+```bash
+sqlite3 ~/.hermes/kanban/boards/<board-slug>/kanban.db "
+SELECT c.id as coder_id, c.title, r.id as reviewer_id
+FROM tasks c
+JOIN task_links l ON l.parent_id = c.id
+JOIN tasks r ON r.id = l.child_id AND r.assignee = 'code-reviewer'
+WHERE c.assignee = 'coder'
+  AND c.status IN ('done', 'archived')
+  AND r.workspace_kind = 'scratch'
+  AND r.completed_at > strftime('%s', 'now', '-30 days')
+ORDER BY r.completed_at DESC;
+"
+```
+
+For each pair returned, the coder's work needs manual verification that it was actually committed and pushed.
+
+---
+
+## Worktree Deploy Guard — Prevent Deploys from Non-Main Refs
+
+### Problem
+
+The `deploy-to-staging` job in `.github/workflows/deploy.yml` accepts a `ref` input parameter via `workflow_dispatch`:
+
+```yaml
+- name: "Ref to deploy"
+  description: "The branch, tag, or SHA to deploy (e.g., feat/new-feature). Defaults to main."
+```
+
+There is **no validation** that the supplied ref is an ancestor of `main`. Any worktree branch, experimental feature branch, or stale fork can be deployed to staging — bypassing PR review, CI testing, and the merge pipeline entirely.
+
+### Evidence
+
+Multiple staging deploys have been triggered from worktree branches (`wt/t_*`, `feature/*`) via `workflow_dispatch`. Staging runs code that was never merged, never reviewed, and never tested with the deploy workflow.
+
+### Defense — Ancestry Check in Deploy Pipeline
+
+Add a validation step in `deploy-to-staging` that checks whether the deployed ref is an ancestor of `origin/main`:
+
+```yaml
+- name: Validate ref is an ancestor of main
+  if: github.event_name == 'workflow_dispatch'
+  run: |
+    git fetch origin main --depth=1000
+    git merge-base --is-ancestor HEAD origin/main && {
+      echo "✅ Ref $(git rev-parse --short HEAD) is an ancestor of origin/main"
+    } || {
+      echo "❌ BLOCKED: Ref $(git rev-parse --short HEAD) is NOT an ancestor of origin/main."
+      echo "Staging deploys must come from main or be merged to main first."
+      echo "Ref: ${{ github.ref_name }}  SHA: $(git rev-parse HEAD)"
+      exit 1
+    }
+```
+
+This was previously added as a step but may have been removed or commented out in deploy.yml rewrites. Verify it exists and is active.
+
+The step should:
+- **Run only on `workflow_dispatch`** — PR merge events always deploy from main (the merge base), so the check is redundant there
+- **Fetch `origin/main` with sufficient depth** — `--depth=1000` ensures the merge-base computation works for branches up to 1000 commits behind
+- **Fail the job** if the ref is not an ancestor — this prevents accidental worktree deploys while still allowing overrides by temporarily removing the guard
+
+### Detection
+
+Check the last N staging deploys and verify their refs:
+
+```bash
+gh run list --workflow deploy.yml --branch main --event workflow_dispatch \
+  --limit 10 --json headBranch,databaseId,headSha --jq \
+  '.[] | "\(.databaseId) \(.headBranch) \(.headSha[0:8])"'
+```
+
+Any run with `headBranch != "main"` is a worktree deploy. Cross-reference the SHA against main:
+
+```bash
+git merge-base --is-ancestor <sha> origin/main && echo "ancestor of main" || echo "NOT ancestor"
+```
+
+---
+
+## Post-Deploy Fix Content Verification
+
+### Problem
+
+The QA verification pipeline (`verify-deploy-qa`) performs structural health checks — API reachability, database connectivity, browser load, version comparison. It does NOT verify that specific fixes from merged PRs are actually present in the deployed environment.
+
+A fix can be "on main" (merged via PR) but absent from staging because:
+- The deploy was cut from a stale SHA (worktree deploy, or deploy before the fix merged)
+- The deploy rolled back silently
+- The fix was never in the merge commit's ancestry (squash loss)
+
+### Evidence
+
+**GH-1660 (Aug 22 2026):** Three fixes (Vision Board 404, i18n broken, empty user name) were merged to main on Aug 23. The last staging deploy was from commit `b5380bef` on Aug 21 — both older than the fixes. QA ran, reported "all healthy," but all three findings were still present on staging. The version check passed because `pyproject.toml` said `0.57.1` both before and after.
+
+### Defense — Per-Fix Verification After Each Deploy
+
+After each successful staging deploy, the QA pipeline should:
+
+1. **Read the merge commit's PR body** — parse `Closes #N` references to identify which fixes should be deployed
+2. **For each closed issue, attempt fix verification:**
+   - **Route fix:** `curl <endpoint>` — check for expected HTTP status and response body
+   - **UI fix:** Drive the browser to the relevant page and check for expected element presence/text
+   - **i18n fix:** Check `<html lang>` attribute, or fetch a route with `Accept-Language` header
+   - **Data fix:** Query the staging DB for expected records
+3. **Report per-fix status:** `"GH-1661 (Vision Board): ✅ route exists (HTTP 200)"` or `"GH-1662 (i18n): ❌ lang attribute still hardcoded"`
+
+### Implementation Sketch
+
+```python
+def verify_fix(issue_num, fix_type, staging_url):
+    """Verify a specific fix on staging. Returns (issue_num, passed, detail)."""
+    fix_checks = {
+        "GH-1661": lambda: (
+            requests.get(f"{staging_url}/vision-board").status_code == 200,
+            "Vision Board route"
+        ),
+        "GH-1662": lambda: (
+            "lang=\"en\"" not in requests.get(staging_url).text,
+            "Dynamic lang attribute"
+        ),
+    }
+    if issue_num in fix_checks:
+        passed, detail = fix_checks[issue_num]()
+        return (issue_num, passed, detail)
+    return (issue_num, None, "No verification check registered")
+```
+
+Each fix should register its verification check when the PR is created. This is the QA equivalent of a test assertion for deployments.
+
+---
+
+## Consolidation Script Silent Skip Notification
+
+### Problem
+
+The `build-consolidate-prs.py` script has several skip paths that produce **no output** — no diagnostic line, no notification, no logged event:
+
+| Skip Condition | Output | Detection Available? |
+|---------------|--------|---------------------|
+| `get_branch_commit_count()` returns -1 (branch lost) | `"⚠️  Branch {branch} lost — skipping"` only when `skip_lost=False` | ❌ Silent in consolidate mode |
+| `get_branch_commit_count()` returns 0 (already on main) | None | ❌ Silent |
+| `get_commit_hashes()` returns empty | None | ❌ Silent |
+| `dedup_key` already in `seen_commit_sets` | None | ❌ Silent |
+| `is_already_in_main()` returns True | None | ❌ Silent |
+| `already_has_pr()` returns True | None | ❌ Silent |
+
+A done coder+reviewer pair can be silently skipped by every cron tick, forever, with no indication that a PR was never created. The user only discovers the gap when they notice the GH issue is still open days later.
+
+### Evidence
+
+**GH-1701 and GH-1731:** Both coder+reviewer pairs reached `done` status. The consolidation script ran every 5 minutes for hours, silently skipping both. No notification was ever sent. The only reason the issue was caught was the user manually asking "where is the PR."
+
+### Defense — Counters and Summary at End of Each Run
+
+The script should maintain counters for each skip reason and emit a summary at the end of its run:
+
+```python
+def main():
+    seen_commit_sets = set()
+    created = 0
+    # Skip counters
+    skip_counters = {
+        "branch_lost": 0,
+        "branch_empty": 0,
+        "dedup_already_pr": 0,
+        "already_on_main": 0,
+        "pr_already_exists": 0,
+        "recovery_succeeded": 0,
+    }
+
+    # ... (existing logic, increment skip_counters at each skip) ...
+
+    # Final summary
+    if sum(skip_counters.values()) > 0 or created > 0:
+        total_skipped = sum(skip_counters.values())
+        parts = [f"Created {created} PRs"]
+        if total_skipped > 0:
+            parts.append(f"Skipped {total_skipped} pairs")
+        for reason, count in skip_counters.items():
+            if count > 0:
+                parts.append(f"  • {reason}: {count}")
+        print("; ".join(parts))
+```
+
+This already works as a `no_agent=True` script — stdout triggers notification. The current script returns silent on zero output. With a summary, every run produces at least one output line.
+
+### Verification
+
+After the fix, confirm by creating a test case: a done coder+reviewer pair with a deliberately invalid branch name. The script should report:
+
+```
+⚠️  Branch wt/t_nonexistent lost — skipping
+Skipped 1 pair;   • branch_lost: 1
+```
