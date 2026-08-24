@@ -142,7 +142,7 @@ The worker skill's workspace-handling table and Do NOT list must carry the same 
 **Worktree setup must use the base branch when available:**
 
 - When `$HERMES_KANBAN_BRANCH` is set: `git worktree add -b wt/$HERMES_KANBAN_TASK <path> $HERMES_KANBAN_BRANCH`
-- When `$HERMES_KANBAN_BRANCH` is NOT set: `git worktree add <path> wt/$HERMES_KANBAN_TASK` (creating from HEAD)
+- When `$HERMES_KANBAN_BRANCH` is NOT set: `git worktree add -b wt/$HERMES_KANBAN_TASK <path> HEAD` (creating from HEAD). **The `-b` flag is CRITICAL** — without it, git checks out an EXISTING branch (which doesn't exist yet) and falls through to detached HEAD. Commits in detached HEAD have no branch ref and become invisible to the consolidation script after the worktree is pruned.
 
 This ensures the worktree branch is based on the correct target, not on `main`.
 
@@ -552,6 +552,63 @@ When stranded commits are discovered:
 `git worktree prune` removes the worktree directory metadata but does NOT delete the branch or its commits. The branch ref and commit objects remain in the local git database. However, if the branch is force-deleted with `git branch -D` or the local clone is removed, the commits are lost (garbage-collected after 90 days in reflog).
 
 The `pr-consolidation-watch` cron pushes the branch from the local ref — it does not need the worktree directory to exist. The commits are in the local object DB even after the worktree is pruned.
+
+### Root Cause: Detached HEAD Worktrees (Missing `-b` Flag)
+
+The most dangerous stranded-commit scenario is invisible to the consolidation scripts: **commits made in a detached HEAD worktree never get a branch ref at all**.
+
+If `git worktree add` is called without `-b <branch>`, git checks out an EXISTING branch by that name. If no such branch exists (the first run for this task), the command fails and falls through to detached HEAD. The coder's commits land on the worktree's internal HEAD pointer, NOT on a named branch:
+
+```
+$ git worktree add /tmp/test wt/t_XXXXX  ← no -b flag
+fatal: 'wt/t_XXXXX' is not a commit and a branch 'wt/t_XXXXX' cannot be created
+$ git branch --show-current
+HEAD  ← detached!
+```
+
+When the worktree is pruned, the HEAD pointer is lost. The commit objects survive in the object DB (reachable only by hash) but the consolidation script finds no branch ref — `git branch` returns nothing, `get_branch_commit_count()` returns -1, and the card is silently skipped.
+
+**Three-layer fix:** See `kanban-worker/SKILL.md` for:
+- Mandatory `-b` flag on every `git worktree add` call
+- Mandatory `git push origin <branch>` before `kanban_complete()` (so even if the worktree is lost, the remote ref survives)
+- The "Abandon work without pushing" Do NOT entry
+
+### Automated Recovery: `recover_from_worktree()`
+
+Both `build-consolidate-prs.py` and `pr-consolidation-watch.py` now include a `recover_from_worktree(branch)` function. When the consolidation script encounters a missing branch (count == -1), it scans `.worktrees/<task-id>/` for the commit before declaring the branch lost:
+
+```python
+def recover_from_worktree(branch):
+    """Fallback: recover branch ref from worktree on disk."""
+    task_id = branch.replace("wt/", "") if branch.startswith("wt/") else branch
+    for suffix in [task_id, branch.replace("/", "_")]:
+        wt_dir = os.path.join(REPO_DIR, ".worktrees", suffix)
+        if not os.path.isdir(wt_dir):
+            continue
+        rc, out, _ = run(["git", "rev-parse", "HEAD"], cwd=wt_dir, timeout=10)
+        if rc == 0 and out.strip():
+            rc2, _, _ = run(["git", "branch", "--force", branch, out.strip()], timeout=10)
+            if rc2 == 0:
+                print(f"  ♻️  Recovered '{branch}' from {suffix}")
+                return True
+    return False
+```
+
+This only works if the worktree directory still exists on disk — run the consolidation script before the prune cycle (which has a 7-day staleness gate for worktrees untouched >24h and a 7-day stale deadline).
+
+### Pitfall: Consolidation Script Only Fetched `origin main`
+
+Until Aug 2026, `build-consolidate-prs.py` only ran:
+```python
+run(["git", "fetch", "--depth=100", "origin", "main"], timeout=30)
+```
+
+If a worktree branch WAS pushed to origin during the brief window before pruning, the consolidation script still couldn't see it — `origin/wt/t_XXXXX` wasn't fetched. Fixed by adding:
+```python
+run(["git", "fetch", "--depth=100", "origin", "refs/heads/wt/*:refs/remotes/origin/wt/*"], timeout=60)
+```
+
+This two-fetch pattern should be included in any new consolidation or merge-audit script.
 
 ---
 
