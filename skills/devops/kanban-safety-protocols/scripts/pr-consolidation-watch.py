@@ -82,7 +82,12 @@ def main():
     seen_commit_sets = set()
     
     # Fetch latest main first
-    run(["git", "fetch", "origin", "main"], timeout=15)
+    run(["git", "fetch", "--depth=100", "origin", "main"], timeout=30)
+    # Also fetch any worktree branches that may have been pushed — the
+    # worktree gets pruned after completion, deleting the local branch ref.
+    # Without this fetch, origin/wt/* branches are invisible and the script
+    # marks them as "lost", silently skipping valid consolidation candidates.
+    run(["git", "fetch", "--depth=100", "origin", "refs/heads/wt/*:refs/remotes/origin/wt/*"], timeout=60)
     
     for db_path in find_boards():
         try:
