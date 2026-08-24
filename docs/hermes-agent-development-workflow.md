@@ -205,7 +205,7 @@ Phase 7: sync-       GH milestone comments
 
 | Job | Schedule | Type | Deliver | Purpose |
 |-----|----------|------|---------|---------|
-| `verify-deploy-qa` | every 10m | agent | telegram | Detects new staging deploys. Runs 4-layer fix verification. Creates GH regression issues. |
+| `verify-deploy-qa` | every 10m | agent | telegram | Detects new staging deploys. For each merged PR, extracts closed issues and verifies each fix on main using static analysis (grep removal/addition). Reports per-fix ✅/❌. Also runs 4-layer QA. |
 | `verify-dogfood` | Sat 8am | agent | telegram | Weekly full exploratory QA session on staging. |
 
 ### Phase 7: Sync
@@ -331,8 +331,9 @@ The `deploy-to-staging` job has this condition:
 |---------|---------|------|
 | `SERVICE_NAME_STAGING` mismatch | `Error parsing [service]` | Match env var names between definition and reference (no `_STAGING` suffix if name doesn't have it) |
 | Cloudflare token expired | Terraform apply 401 | Generate new CF API token, update GitHub secret |
-| paths-filter empty on merge | Deploy always skipped | Add `github.event.action == 'closed'` to path-filter condition |
-| Skipped needs cascade | Deploy skipped | Use `always()` in `if:` condition, remove test jobs from deploy `needs` |
+| `paths-filter empty on merge` | Deploy always skipped | Add `github.event.action == 'closed'` to path-filter condition |
+| `Skipped needs cascade` | Deploy skipped | Use `always()` in `if:` condition, remove test jobs from deploy `needs` |
+| **Worktree branch deployed to production** | Production runs unreviewed code | Production has `"Validate production deploy ref is ancestor of main"` step — blocks any `workflow_dispatch` from a non-main ref. Staging is intentionally unguarded for testing flexibility. |
 
 ### Cache Primer
 On push to `main`, a lightweight `cache-primer` job installs Python and Node dependencies. All heavy jobs skip push events to conserve minutes. Cache writes are blocked on `pull_request_target` by GitHub policy — the primer works around this.
