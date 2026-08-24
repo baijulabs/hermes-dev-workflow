@@ -77,6 +77,21 @@ def get_branch_commit_count(branch):
         return int(out.strip())
     return 0
 
+def recover_from_worktree(branch):
+    """Fallback: recover branch ref from worktree on disk."""
+    task_id = branch.replace("wt/", "") if branch.startswith("wt/") else branch
+    for suffix in [task_id, branch.replace("/", "_")]:
+        wt_dir = os.path.join(REPO_DIR, ".worktrees", suffix)
+        if not os.path.isdir(wt_dir):
+            continue
+        rc, out, _ = run(["git", "rev-parse", "HEAD"], cwd=wt_dir, timeout=10)
+        if rc == 0 and out.strip():
+            rc2, _, _ = run(["git", "branch", "--force", branch, out.strip()], timeout=10)
+            if rc2 == 0:
+                print(f"  Recovery: recovered {branch}, commit {out.strip()[:12]}")
+                return True
+    return False
+
 def main():
     created = 0
     seen_commit_sets = set()
@@ -116,10 +131,15 @@ def main():
                 coder_id = row["id"]
                 branch = row["branch_name"]
                 
+                # 0. Recovery: if branch ref is missing, try worktree on disk
+                if branch and get_branch_commit_count(branch) == 0:
+                    if recover_from_worktree(branch):
+                        print(f"  Recovery successful for {branch}")
+
                 # 1. Check branch has commits vs main
                 count = get_branch_commit_count(branch)
                 if count == 0:
-                    continue  # already on main
+                    continue  # already on main or lost
                 
                 # 2. Get commit hashes for dedup
                 hashes = get_commit_hashes(branch)

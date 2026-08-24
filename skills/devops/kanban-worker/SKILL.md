@@ -22,7 +22,7 @@ Your workspace kind determines how you should behave inside `$HERMES_KANBAN_WORK
 |---|---|---|
 | `scratch` | Fresh tmp dir, yours alone | Read/write freely; it gets GC'd when the task is archived. |
 | `dir:<path>` | Shared persistent directory | Other runs will read what you write. Treat it like long-lived state. Path is guaranteed absolute (the kernel rejects relative paths). |
-| `worktree` | Git worktree at the resolved path | **If `$HERMES_KANBAN_BRANCH` is set** (base branch specified by the orchestrator): run `git worktree add -b wt/$HERMES_KANBAN_TASK <path> $HERMES_KANBAN_BRANCH` from the main repo — this creates a new worktree branch from the correct base. Then cd and work normally. Commit work here.<br><br>**If `$HERMES_KANBAN_BRANCH` is NOT set** (no base specified): run `git worktree add <path> wt/$HERMES_KANBAN_TASK` from the main repo, creating from HEAD.
+| `worktree` | Git worktree at the resolved path | **If `$HERMES_KANBAN_BRANCH` is set** (base branch specified by the orchestrator): from the main repo, run:<br>`git worktree add -b wt/$HERMES_KANBAN_TASK &lt;path&gt; $HERMES_KANBAN_BRANCH`<br>This creates a new worktree branch from the correct base. cd into &lt;path&gt; and work normally.<br><br>**If `$HERMES_KANBAN_BRANCH` is NOT set** (no base specified): from the main repo, run:<br>`git worktree add -b wt/$HERMES_KANBAN_TASK &lt;path&gt; HEAD`<br>The `-b` flag is CRITICAL — without it, git checks out an EXISTING branch (which doesn't exist yet) and falls through to detached HEAD. Commits in detached HEAD are orphaned when the worktree is pruned — they have no branch ref and the consolidation script cannot find them. Always use `-b`. |
 
 ### ⚠️ BRANCH GUARDRAIL — CRITICAL
 
@@ -38,14 +38,34 @@ git log --oneline -1
   kanban_block(reason="CRITICAL BRANCH ERROR: worktree resolved to main/master. Cannot implement here.")
   ```
 - **If the branch is `wt/t_<task_id>` or `fix/df-*` or another worktree branch** — proceed. You are on the correct branch.
-- **If the branch is anything else (develop, feature/..., etc.)** — STOP. This is not the expected worktree branch something is wrong. Block the task.
+- **If the branch is anything else (develop, feature/..., etc.)** — STOP. This is not the expected worktree branch. Block the task.
 - **Check the base branch.** The card body says `BASE BRANCH: <name>`. Verify the worktree was created from that base by checking `$HERMES_KANBAN_BRANCH`:
   ```bash
   echo "Base branch: $HERMES_KANBAN_BRANCH"
   ```
   If the base branch in the env var doesn't match the card body, the worktree was created from the wrong base — block the task.
 
-**Never commit, push, or write code to `main` or `master` — ever.** There is no "small fix" exemption. |
+### ⚠️ MANDATORY PUSH BEFORE COMPLETE
+
+**Before calling `kanban_complete()`, you MUST push your worktree branch to origin.**
+
+If you commit to the worktree but never push, your commit lives only in the local git object database. When the worktree is pruned (after completion), the branch ref can be lost and the consolidation script finds nothing — no PR is ever created. The commit becomes invisible to every downstream process.
+
+```bash
+# Verify you are on the correct worktree branch
+BRANCH=$(git branch --show-current)
+echo "Pushing $BRANCH to origin"
+
+# Push the branch
+git push origin "$BRANCH"
+
+# Confirm it landed
+git branch -r --list "origin/$BRANCH"
+```
+
+If push fails (e.g., branch already on origin, permission error), call `kanban_block(reason="push-failed: ...")` — do not complete without confirming the push succeeded.
+
+**Never push to `main` or `master` — ever.** Push only your worktree branch.
 
 ## Tenant isolation
 
@@ -204,7 +224,8 @@ You can configure the gateway to receive cross-profile Kanban task notifications
 - Create follow-up tasks assigned to yourself — assign to the right specialist.
 - Complete a task you didn't actually finish. Block it instead.
 - Block with `review-required` when a paired reviewer card exists. The reviewer card won't promote until you complete — check `children` in `kanban_show` to see if one exists.
-- **Open a Pull Request.** The orchestrator creates ONE PR per epic after all sub-tasks and reviews are done. If you open a PR from your worktree, the orchestrator loses control of the branch and may create duplicate PRs. Commit your changes to the worktree branch, then complete the task — the orchestrator handles the rest.
+- **Open a Pull Request.** The orchestrator creates ONE PR per epic after all sub-tasks and reviews are done. If you open a PR from your worktree, the orchestrator loses control of the branch and may create duplicate PRs. Commit your changes to the worktree branch, push to origin, then complete the task — the orchestrator handles the rest.
+- **Abandon work without pushing to origin.** Your commits exist only in the worktree's local refs. When the worktree is pruned (after completion), the branch ref may be lost. The consolidation script finds nothing and no PR is ever created. Always `git push origin <branch>` before `kanban_complete()`.
 - **Commit or push to `main` or `master` — ever.** This is a hard stop. If your worktree resolved to `main`, do not write a single line of code — block the task with `kanban_block(reason="CRITICAL BRANCH ERROR: worktree on main")`. There is no "quick fix" exemption. Only the orchestrator creates PRs to main.
 
 ## Pitfalls

@@ -136,6 +136,28 @@ def get_branch_commit_count(branch):
         return int(out.strip())
     return -1
 
+def recover_from_worktree(branch):
+    """Fallback: if a branch ref is lost locally but the worktree still exists
+    on disk, try to recover the latest commit and recreate the branch ref.
+    Returns True if recovery succeeded."""
+    task_id = branch.replace("wt/", "") if branch.startswith("wt/") else branch
+    candidates = [
+        os.path.join(REPO_DIR, ".worktrees", task_id),
+        os.path.join(REPO_DIR, ".worktrees", branch.replace("/", "_")),
+    ]
+    for wt_dir in candidates:
+        if not os.path.isdir(wt_dir):
+            continue
+        rc, out, _ = run(["git", "rev-parse", "HEAD"], cwd=wt_dir, timeout=10)
+        if rc == 0 and out.strip():
+            commit = out.strip()
+            rc2, _, err2 = run(["git", "branch", "--force", branch, commit], timeout=10)
+            if rc2 == 0:
+                print(f"  ♻️  Recovered branch '{branch}' from worktree at {os.path.basename(wt_dir)} (commit {commit[:12]})")
+                return True
+            print(f"  ⚠️  Found commit {commit[:12]} in worktree but failed to create branch: {err2[:60]}")
+    return False
+
 def group_cards_by_issue(db_path, cutoff):
     """Query done coder+reviewer pairs and group them by GH issue number."""
     conn = sqlite3.connect(db_path)
@@ -192,8 +214,13 @@ def check_dedup_and_branch(entry, seen_commit_sets, skip_lost=False):
     count = get_branch_commit_count(branch)
     if count == -1:
         if not skip_lost:
-            print(f"  ⚠️  Branch {branch} lost — skipping")
-        return False, None
+            # Attempt recovery from worktree on disk before giving up
+            if recover_from_worktree(branch):
+                # Re-check after recovery
+                count = get_branch_commit_count(branch)
+            else:
+                print(f"  ⚠️  Branch {branch} lost — skipping")
+                return False, None
     if count == 0:
         return False, None
 
