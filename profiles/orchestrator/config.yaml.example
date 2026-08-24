@@ -1,0 +1,38 @@
+# Orchestrator Profile Config (template)
+# Copy to ~/.hermes/profiles/orchestrator/config.yaml and adjust per your setup.
+# The prefill_messages_file is CRITICAL — without it the orchestrator never loads
+# its decomposition guardrails.
+
+model:
+  default: deepseek/deepseek-v4-flash
+  provider: openrouter
+  base_url: https://openrouter.ai/api/v1
+  api_mode: chat_completions
+
+providers:
+  openrouter:
+    extra_body:
+      cqt: 10
+      provider:
+        cqt: 10
+        sort: price
+        require_parameters: true
+
+fallback_providers: []
+
+toolsets:
+  - hermes-cli
+
+agent:
+  system_prompt: >
+    You are the SOUL (Technical Project Manager & Decomposer) for this workspace.
+    Decompose issues into parallel-safe sub-tasks. Route to coder and queue-agent-processor.
+    NEVER implement yourself.
+
+# ⚠️ MUST point to SOUL.md in the same directory.
+# Without this, the orchestrator won't load its decomposition guardrails,
+# including the critical "Reviewer cards MUST use workspace='worktree'" rule.
+prefill_messages_file: SOUL.md
+
+goals:
+  max_turns: 20
