@@ -1,7 +1,7 @@
 ---
 name: kanban-safety-protocols
 description: Safety guardrails for kanban task execution — branch protection (prevent commits to main/wrong branches), worktree verification, and cross-cutting safety patterns that protect the repo from automation errors.
-version: 2.10.0
+version: 2.11.0
 platforms: [linux, macos, windows]
 environments: [kanban]
 metadata:
@@ -850,6 +850,17 @@ kanban_create(
     parents=[coder_id],
 )
 ```
+**Pitfall — SOUL.md text is correct but `prefill_messages_file` is empty.** The orchestrator only loads SOUL.md if `prefill_messages_file: SOUL.md` is set in the profile's `config.yaml`. If the config has `prefill_messages_file: ''` (the default), the SOUL.md sits on disk as a passive document — the orchestrator never sees it. This was the root cause for 447/626 reviewer cards being `scratch`: the SOUL.md had the correct instructions for months, but the config had the empty default. Verify with:
+
+```bash
+grep prefill_messages_file ~/.hermes/profiles/orchestrator/config.yaml
+# Expected: prefill_messages_file: SOUL.md
+```
+
+Fix with:
+```bash
+hermes config set prefill_messages_file "SOUL.md"
+```
 
 ### Three-Layer Defense
 
@@ -1092,6 +1103,7 @@ def main():
         "already_on_main": 0,
         "pr_already_exists": 0,
         "recovery_succeeded": 0,
+        "already_merged": 0,
     }
 
     # ... (existing logic, increment skip_counters at each skip) ...
@@ -1109,6 +1121,33 @@ def main():
 ```
 
 This already works as a `no_agent=True` script — stdout triggers notification. The current script returns silent on zero output. With a summary, every run produces at least one output line.
+
+### Pitfall: False "lost" Warnings for Already-Merged PRs
+
+When a PR merges with `--delete-branch`, the remote branch is deleted. The kanban card stays `done` (not `archived`). The consolidation script re-processes it every tick, fails to find the branch, and prints a misleading `"⚠️  Branch lost — skipping"` warning — even though the work is already on main.
+
+**Fix:** Before reporting "branch lost," check if a merged PR exists for that branch:
+
+```python
+def pr_for_branch_is_merged(branch):
+    """Check if a PR was already created from this branch and merged."""
+    rc, out, _ = run(["gh", "pr", "list", "--state", "merged", "--head", branch,
+                      "--json", "number,state", "--jq", "length"], timeout=15)
+    if rc == 0 and out.strip().isdigit() and int(out.strip()) > 0:
+        return True
+    return False
+```
+
+If a merged PR is found, **archive the coder card** so the consolidation script never re-processes it:
+
+```python
+if pr_for_branch_is_merged(branch):
+    skip_counters["already_merged"] += 1
+    archive_coder_card(coder_id)
+    return False  # silently handled — no "lost" warning
+```
+
+This eliminates the false alarm and cleans up stale `done` cards automatically.
 
 ### Verification
 
