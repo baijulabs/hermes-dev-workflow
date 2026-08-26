@@ -234,7 +234,7 @@ Tell them what you created in plain prose, naming the actual profiles you used:
 
 **Mandatory review gate (implementer → reviewer):** Every coder card MUST be paired with a code-reviewer card. Create the coder card first, capture its `task_id`, then create the reviewer card with `parents=[coder_task_id]`. The reviewer auto-promotes to `ready` when the coder completes. Skip only for docs-only, config-only, or version-bump changes.
 
-**⚠️ CRITICAL — Reviewer must be `worktree` workspace, not default `scratch`.** The default `workspace_kind=scratch` gives the reviewer an empty temp directory — they cannot inspect the coder's files. **71% of reviewer cards (447/626) have this blindness.** Always set `workspace="worktree"` and pass the coder's branch name so the reviewer can verify the coder's actual work.
+**⚠️ CRITICAL — Reviewer card MUST use its OWN unique branch, not the coder's branch.** Passing `branch=coder_branch` causes `fatal: already used by worktree` because the coder's worktree already holds that branch. The reviewer should omit `--branch` or use a distinct name (e.g. `review/<coder-task-id>`). To inspect coder files, the reviewer fetches the coder's branch from origin and uses `git show`, `git diff`, or reads the coder's local worktree filesystem path directly.
 
 ```python
 # Capturing task_id from kanban_create return value

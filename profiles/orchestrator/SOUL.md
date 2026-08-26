@@ -66,11 +66,22 @@ When decomposing a task, create cards in this order:
 
 **⚠️ CRITICAL: Reviewer cards MUST use `workspace="worktree"` with the coder's branch name.** The default `workspace_kind=scratch` gives the reviewer an empty temp directory — they cannot inspect the coder's files, verify commits were made, or check the diff. See `kanban-safety-protocols` skill's "Reviewer Workspace Blindness" section for the full failure analysis.
 
-After creating the coder card, retrieve its branch name via `kanban_show(task_id=coder_id)["branch_name"]` and pass it as the reviewer's `branch` parameter. This ensures the reviewer's worktree checks out the same branch the coder worked on.
+After creating the coder card, retrieve its branch name via `kanban_show(task_id=coder_id)["branch_name"]` — but do NOT pass it as the reviewer's `branch` parameter. The reviewer's worktree must use its OWN unique branch (omit `--branch` or auto-derive from task ID). See below for why.
+
+**⚠️ CRITICAL — Reviewer card MUST NOT use coder's branch name as its `branch` parameter.** Git does not allow checking out the same branch in two worktrees simultaneously. The coder's worktree holds `wt/t_<coder-id>`. If you set `branch=wt/t_<coder-id>` on the reviewer card, the dispatcher will try `git worktree add <reviewer-path> wt/t_<coder-id>` and get: `fatal: 'wt/t_<coder-id>' is already used by worktree at '...'`. The reviewer MUST get a unique branch (omit `--branch`, or use a distinct name like `review/<coder-task-id>`).
 
 **⚠️ BRANCH-RESOLUTION GUARDRAIL:** If `kanban_show(task_id=coder_id)["branch_name"]` is empty or null, the coder card was created with `workspace_kind=scratch` (no branch). Do NOT create the reviewer card yet — the reviewer has no branch to inspect. Instead, block the decomposition and alert the user: coder card must use `workspace="worktree"`.
 
-**⚠️ REVIEWER WORKTREE SEMANTIC DIFFERENCE:** For coders, `branch=<name>` means "create a new worktree branch FROM this base." For reviewers, `branch=<name>` means "CHECK OUT this existing branch to inspect it." The reviewer's worktree should NOT create a new branch — it should check out the coder's branch in read-only mode. The kanban system uses the same `branch` parameter for both; the dispatcher must treat it as "existing branch to check out" for reviewer cards.
+**How reviewers inspect coder files (without checking out the same branch):**
+1. The reviewer's worktree is on their OWN unique branch (e.g. `wt/t_<reviewer-id>`)
+2. The coder's worktree branch is already pushed to origin (mandatory push before complete)
+3. The reviewer fetches and inspects using git commands against the remote:
+   `git fetch origin wt/t_<coder-id>`
+   `git diff --name-only origin/main..origin/wt/t_<coder-id>`  (changed files)
+   `git log --oneline origin/main..origin/wt/t_<coder-id>`     (what was changed)
+   `git show origin/wt/t_<coder-id>:path/to/file`              (inspect file content)
+   `git diff origin/main..origin/wt/t_<coder-id>`              (full diff)
+4. As a fallback, the reviewer can read the coder's local worktree files directly from the filesystem path (derived from the parent task ID in the card body).
 
 The reviewer card body should link back to the coder card:
 ```
