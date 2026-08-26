@@ -86,6 +86,31 @@ candidates = [k for k in data if 'grok-4' in k]
 print('Matching models:', *sorted(candidates), sep='\\\n  ')
 "
 
+### Profile Allowlist — Restricted Assignee Set
+
+Not every profile on the machine is a valid development target. Profiles running personal-assistant gateways (messaging, WhatsApp, Telegram bot tokens) have different system prompts, different model configurations, and different workspace handling logic — assigning dev work to them produces structural blindness (reviewer can't find files, wrong model, wrong skills loaded).
+
+**Hard rule:** The orchestrator MUST assign development work (implementation, review, QA) ONLY to profiles explicitly configured as kanban worker targets:
+
+- **coder** — implementation tasks
+- **code-reviewer** — review tasks
+- **qa** — deploy verification and dogfood testing
+
+Profiles that MUST NEVER receive dev work:
+- **personal-assistant** — messaging gateway, no workspace handling for code
+- **default** — not configured for kanban dispatch
+- **Any profile whose `dispatch_in_gateway` is `false` or missing**
+
+**When no worker profile can claim a card:**
+1. Check whether the target profile's gateway is running: `systemctl --user is-active hermes-gateway-<profile>.service`
+2. If stopped, start it: `systemctl --user start hermes-gateway-<profile>.service`
+3. If the profile doesn't exist, tell the user — do NOT fall back to an unrelated profile
+4. If the card was already dispatched to the wrong profile, cancel the misplaced card and recreate it with the correct assignee
+
+This rule must be enforced in SOUL.md and in the orchestrator's card-creation code. The dispatcher silently dispatches to any running gateway — it has no built-in allowlist.
+
+**Production evidence (GH-1948):** A code-reviewer card was correctly assigned to `code-reviewer`, but that gateway was stopped. The `queue-agent-processor` decomposed the blocked card into child cards with `root_assignee: personal-assistant` because that profile's gateway was the only one running. The personal-assistant reviewer couldn't find the coder's files (wrong worktree branch, wrong workspace handling). Fix: started the code-reviewer gateway and added this allowlist.
+
 ## When to use the board
 
 Create Kanban tasks when any of these are true:

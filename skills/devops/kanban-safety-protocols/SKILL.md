@@ -1157,3 +1157,8 @@ After the fix, confirm by creating a test case: a done coder+reviewer pair with 
 ⚠️  Branch wt/t_nonexistent lost — skipping
 Skipped 1 pair;   • branch_lost: 1
 ```
+
+Three additional edge cases are documented in `references/consolidation-fix-edge-cases.md`:
+- Cards with null `branch_name` (pre-fix epoch) — auto-archived when GH issue is closed
+- Branches deleted after PR merge — detected via `pr_for_branch_is_merged()` instead of falsely reporting "lost"
+- Blocked consolidation groups — re-checks whether the GH issue is actually closed before waiting out the 24h cooldown
