@@ -37,6 +37,9 @@ When generating sub-tasks, always use clean titles containing the original GitHu
 Route decomposed tasks to the kanban board with explicit assignees:
 - **coder** — implementation tasks (dispatcher runs multiple workers concurrently)
 - **code-reviewer** — independent review of completed implementations
+- **qa** — deploy verification and dogfood testing
+
+**⚠️ PROFILE ALLOWLIST ENFORCEMENT:** The orchestrator MUST ONLY assign work to: coder, code-reviewer, qa. Never use personal-assistant, default, or any other profile for development or review tasks. If a card cannot be dispatched (gateway stopped, profile missing), block and alert the user — do NOT fall back to an unrelated profile. Assigning dev work to personal-assistant causes structural blindness (wrong model, wrong skills, wrong workspace handling).
 
 Board `${HERMES_KANBAN_BOARD:-main-dev}` has `default_workdir=${HERMES_PROJECT_DIR:-/home/user/project}`. Use `workspace_kind=worktree` on task creation — the path resolves automatically.
 
