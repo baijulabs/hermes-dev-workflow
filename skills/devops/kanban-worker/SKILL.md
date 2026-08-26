@@ -22,7 +22,7 @@ Your workspace kind determines how you should behave inside `$HERMES_KANBAN_WORK
 |---|---|---|
 | `scratch` | Fresh tmp dir, yours alone | Read/write freely; it gets GC'd when the task is archived. |
 | `dir:<path>` | Shared persistent directory | Other runs will read what you write. Treat it like long-lived state. Path is guaranteed absolute (the kernel rejects relative paths). |
-| `worktree` | Git worktree at the resolved path | **If `$HERMES_KANBAN_BRANCH` is set** (base branch specified by the orchestrator): from the main repo, run:<br>`git worktree add -b wt/$HERMES_KANBAN_TASK &lt;path&gt; $HERMES_KANBAN_BRANCH`<br>This creates a new worktree branch from the correct base. cd into &lt;path&gt; and work normally.<br><br>**If `$HERMES_KANBAN_BRANCH` is NOT set** (no base specified): from the main repo, run:<br>`git worktree add -b wt/$HERMES_KANBAN_TASK &lt;path&gt; HEAD`<br>The `-b` flag is CRITICAL — without it, git checks out an EXISTING branch (which doesn't exist yet) and falls through to detached HEAD. Commits in detached HEAD are orphaned when the worktree is pruned — they have no branch ref and the consolidation script cannot find them. Always use `-b`. |
+| `worktree` | Git worktree at the resolved path | **For coders** (new work to create):<br>`git worktree add -b wt/$HERMES_KANBAN_TASK <path> $HERMES_KANBAN_BRANCH`<br>Creates a new worktree branch from the base, commits are your own.<br><br>**For reviewers** (verify coder's work):<br>`git worktree add <path> $HERMES_KANBAN_BRANCH`<br>NO `-b` flag — checks out the coder's existing branch directly. You are in read-only review mode on their branch.<br><br>**If `$HERMES_KANBAN_BRANCH` is NOT set** (no base specified): from the main repo, run:<br>`git worktree add -b wt/$HERMES_KANBAN_TASK <path> HEAD`<br>The `-b` flag is CRITICAL — without it, git checks out an EXISTING branch (which doesn't exist yet) and falls through to detached HEAD. Commits in detached HEAD are orphaned when the worktree is pruned — they have no branch ref and the consolidation script cannot find them. Always use `-b`. |
 
 ### ⚠️ BRANCH GUARDRAIL — CRITICAL
 
@@ -51,7 +51,9 @@ git log --oneline -1
 
 If you commit to the worktree but never push, your commit lives only in the local git object database. When the worktree is pruned (after completion), the branch ref can be lost and the consolidation script finds nothing — no PR is ever created.
 
-If you never commit at all (uncommitted changes in the worktree), the situation is worse — your work is stranded in a worktree directory that will be deleted, with zero trace in git history.
+If you never commit at all (uncommitted changes in the worktree), your work is stranded in a worktree directory that will be deleted with zero trace in git history. The reviewer also cannot verify your work because there are no commits to inspect. This happened in production (GH-1731): coder made real changes, called `kanban_complete()`, but never committed — the reviewer approved a dirty worktree that was later pruned, and no PR was ever created.
+
+Additionally, if you do NOT push, the reviewer (who gets a SEPARATE worktree on your branch) cannot see your files — the reviewer's `git worktree add <path> $HERMES_KANBAN_BRANCH` can only resolve the branch if it exists either locally or on origin. If your branch is local-only and you're on a different machine or different worktree session, the reviewer gets a "fatal: invalid reference" error or a fallback to main. Always push to origin so the reviewer can fetch your branch. This is the root cause of the review-worktree blindness in GH-1948 (t_976fa5f0 couldn't find t_ebc8e3be's files).
 
 ```bash
 # 1. Verify you are on the correct worktree branch
@@ -88,6 +90,24 @@ If `$HERMES_TENANT` is set, the task belongs to a tenant namespace. When reading
 **Default: complete.** The orchestrator creates a paired reviewer card via `parents=[coder_task_id]` for every implementation task. The reviewer auto-promotes to `ready` when the coder completes. The coder's job is to implement, test, and **complete** — not to block for review.
 
 **Block only when** you hit a genuine roadblock that needs human input (ambiguous requirement, missing credential, broken toolchain). **Do NOT block for review — the review gate is the orchestrator's responsibility.** If you call `kanban_block(reason="review-required:...")`, a watchdog cron will auto-complete your card within 5 minutes anyway — you're wasting your own time. Always call `kanban_complete()` with structured metadata instead.
+
+### Reviewer-specific: Finding the coder's files
+
+If you are a **reviewer** (your task has a parent coder card), your worktree should have been created on the coder's branch. If expected files are missing:
+
+1. **Check what branch you're on:** `git branch --show-current`. You should be on the coder's branch (e.g. `wt/t_<coder-id>`), not your own task's branch.
+2. **If on the wrong branch:** The orchestrator didn't pass the coder's branch. Check `$HERMES_KANBAN_BRANCH` — if set, re-create your worktree:
+   ```
+   git worktree add <workspace-path> $HERMES_KANBAN_BRANCH
+   ```
+   If not set, look up the parent task via `kanban_show()` and check its `branch_name` field.
+3. **Fetch the coder's branch from origin** if not local:
+   ```
+   git fetch origin wt/t_<coder-id>
+   git worktree add <workspace-path> origin/wt/t_<coder-id>
+   ```
+4. **Last resort: check the coder's local worktree on disk.** The coder's worktree is at `<repo>/.worktrees/<coder-task-id>/`. The files are there if the coder committed but didn't push.
+5. **If all above fails**, block the task: `kanban_block(reason="review-cannot-find-files: expected file <name> not found in coder's worktree or branch")`
 
 ## Good summary + metadata shapes
 

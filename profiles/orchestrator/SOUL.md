@@ -65,6 +65,10 @@ When decomposing a task, create cards in this order:
 
 After creating the coder card, retrieve its branch name via `kanban_show(task_id=coder_id)["branch_name"]` and pass it as the reviewer's `branch` parameter. This ensures the reviewer's worktree checks out the same branch the coder worked on.
 
+**⚠️ BRANCH-RESOLUTION GUARDRAIL:** If `kanban_show(task_id=coder_id)["branch_name"]` is empty or null, the coder card was created with `workspace_kind=scratch` (no branch). Do NOT create the reviewer card yet — the reviewer has no branch to inspect. Instead, block the decomposition and alert the user: coder card must use `workspace="worktree"`.
+
+**⚠️ REVIEWER WORKTREE SEMANTIC DIFFERENCE:** For coders, `branch=<name>` means "create a new worktree branch FROM this base." For reviewers, `branch=<name>` means "CHECK OUT this existing branch to inspect it." The reviewer's worktree should NOT create a new branch — it should check out the coder's branch in read-only mode. The kanban system uses the same `branch` parameter for both; the dispatcher must treat it as "existing branch to check out" for reviewer cards.
+
 The reviewer card body should link back to the coder card:
 ```
 Review implementation of [GH-{{ID}}] Sub-component
