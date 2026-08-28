@@ -1,7 +1,7 @@
 ---
 name: kanban-safety-protocols
 description: Safety guardrails for kanban task execution — branch protection (prevent commits to main/wrong branches), worktree verification, and cross-cutting safety patterns that protect the repo from automation errors.
-version: 2.11.0
+version: 2.12.0
 platforms: [linux, macos, windows]
 environments: [kanban]
 metadata:
@@ -868,8 +868,15 @@ hermes config set prefill_messages_file "SOUL.md"
 
 Every code-reviewer card MUST include:
 1. `workspace="worktree"` — so the reviewer gets a git worktree, not a scratch dir
-2. `branch="wt/t_<coder-task-id>"` — so the worktree checks out the coder's branch (this requires the orchestrator to capture the coder's `task_id` AND `branch_name`)
-3. The reviewer card body should include the coder's branch name for verification
+2. **⚠️ CRITICAL: The reviewer MUST get its OWN unique branch — NOT the coder's branch name.** Git does not allow two worktrees on the same branch simultaneously. Passing `branch=coder_branch` causes `fatal: '<branch>' is already used by worktree at '<coder-worktree>'.` The reviewer should omit `--branch` entirely (dispatcher auto-derives `wt/t_<reviewer-id>`) or use a distinct name like `review/<coder-task-id>`.
+3. The card body should include the coder's branch name so the reviewer knows what to inspect
+
+**How reviewers inspect coder files (without checking out the coder's branch):**
+   a. Fetch the coder's branch from origin: `git fetch origin wt/t_<coder-id>`
+   b. List changed files: `git diff --name-only origin/main..origin/wt/t_<coder-id>`
+   c. Read specific file content: `git show origin/wt/t_<coder-id>:path/to/file`
+   d. Read the full diff: `git diff origin/main..origin/wt/t_<coder-id>`
+   e. Last resort: read the coder's local worktree filesystem at `<repo>/.worktrees/<coder-task-id>/`
 
 ```python
 # Capture coder info during creation
@@ -881,23 +888,28 @@ coder_task = kanban_create(
 )
 coder_id = coder_task["task_id"]
 
-# Retrieve the branch name from kanban_show
+# Retrieve the branch name from kanban_show (for the card body only)
 coder_detail = kanban_show(task_id=coder_id)
 coder_branch = coder_detail.get("branch_name", "")
 
-# Create reviewer with the same workspace
+# Create reviewer — MUST get its OWN unique branch (omit --branch or use distinct name)
 kanban_create(
     title="Review: [GH-42] rate limiter",
     assignee="code-reviewer",
     workspace="worktree",
-    branch=coder_branch,  # <-- same branch as coder
+    # NO branch= parameter — auto-derives wt/t_<reviewer-id>, avoids worktree collision
     parents=[coder_id],
     body=(
         "Review implementation of [GH-42] rate limiter\n"
         f"Coder task: {coder_id}\n"
-        f"Coder branch: {coder_branch}\n"
+        f"Coder branch: {coder_branch} (fetch from origin to inspect)\n"
         "Files: rate_limiter.py, tests/test_rate_limiter.py\n"
-        "Verification: 14 tests must pass"
+        "Verification: 14 tests must pass\n"
+        "---\n"
+        "Inspection guide:\n"
+        f"1. git fetch origin {coder_branch}\n"
+        "2. git diff --name-only origin/main..origin/<coder_branch>\n"
+        "3. git show origin/<coder_branch>:path/to/file\n"
     ),
 )
 ```
