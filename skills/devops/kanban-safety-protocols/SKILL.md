@@ -219,7 +219,39 @@ This skill is the umbrella for any cross-cutting safety pattern that doesn't fit
 5. Update all four locations: SOUL.md (orchestrator identity → card body format), AGENTS.md (coder instructions), and kanban-worker skill (worktree setup + Do NOT list)
 
 #
-## CI/Deploy YAML Change Guardrail
+## Profile Allowlist Enforcement
+
+### Problem
+
+When the orchestrator's SOUL.md has no profile allowlist, fallback handlers (like `block_loop_detected` → decomposition) can assign dev/review work to any running gateway profile — including `personal-assistant`, which is a conversational assistant with no dev skills, wrong model, and no worktree workspace support. The result: structural blindness (can't inspect coder files), stalled cards, and wasted agent turns.
+
+### Evidence
+
+**GH-1948 (Aug 26 2026):** Reviewer card `t_976fa5f0` was correctly created with `assignee=code-reviewer`, but the `code-reviewer` gateway was stopped. After two `block_loop_detected` events, a decomposition handler assigned 3 child cards to `personal-assistant` (`root_assignee: "personal-assistant"`). The personal-assistant had different skills, a different model, and no workspace context for the coder's files — the review could never succeed.
+
+### Three-Layer Defense
+
+#### Layer 1 — SOUL.md Allowlist
+
+The orchestrator's identity file (SOUL.md) must explicitly restrict which profiles can receive dev/review work:
+
+```
+**⚠️ PROFILE ALLOWLIST ENFORCEMENT:** The orchestrator MUST ONLY assign work to: coder, code-reviewer, qa. Never use personal-assistant, default, or any other profile for development or review tasks. If a card cannot be dispatched (gateway stopped, profile missing), block and alert the user — do NOT fall back to an unrelated profile.
+```
+
+#### Layer 2 — Gateway Health Check Before Card Creation
+
+Before creating a card, verify the target profile's gateway is running:
+
+```bash
+systemctl --user is-active hermes-gateway-<profile>.service
+```
+
+If the gateway is stopped, block the decomposition and alert the user — do not create the card.
+
+#### Layer 3 — Decomposition Handler Guard
+
+If a decomposition handler (e.g. `block_loop_detected` processing in the queue-agent-processor) creates child cards, it MUST NOT fall back to non-dev profiles. Hard-stop on gateway-down rather than routing to personal-assistant.
 
 ### Problem
 
@@ -897,7 +929,8 @@ kanban_create(
     title="Review: [GH-42] rate limiter",
     assignee="code-reviewer",
     workspace="worktree",
-    # NO branch= parameter — auto-derives wt/t_<reviewer-id>, avoids worktree collision
+    # DO NOT pass branch=<coder_branch> — git rejects two worktrees on the same branch.
+    # Omit --branch (auto-derives wt/t_<reviewer-id>) or use a distinct name.
     parents=[coder_id],
     body=(
         "Review implementation of [GH-42] rate limiter\n"
@@ -906,15 +939,16 @@ kanban_create(
         "Files: rate_limiter.py, tests/test_rate_limiter.py\n"
         "Verification: 14 tests must pass\n"
         "---\n"
-        "Inspection guide:\n"
+        "Inspection guide (you are on your OWN branch, NOT the coder's):\n"
         f"1. git fetch origin {coder_branch}\n"
         "2. git diff --name-only origin/main..origin/<coder_branch>\n"
         "3. git show origin/<coder_branch>:path/to/file\n"
+        "4. git diff origin/main..origin/<coder_branch>\n"
     ),
 )
 ```
 
-**This MUST be baked into the orchestrator's SOUL.md card body format.** Without it, every decomposition session creates blind reviewers.
+**⚠️ CRITICAL: The reviewer MUST get its OWN unique branch — NOT the coder's branch name.** Git does not allow two worktrees on the same branch simultaneously. Passing `branch=coder_branch` causes `fatal: '<branch>' is already used by worktree at '<coder-worktree>'.` This was the root cause of the GH-1948 reviewer failure (t_gh1976_review_6ab5).
 
 #### Layer 2 — Reviewer Workflow (Verify Before Approving)
 
@@ -1116,6 +1150,8 @@ def main():
         "pr_already_exists": 0,
         "recovery_succeeded": 0,
         "already_merged": 0,
+        "no_branch_card": 0,       # no branch_name in DB (pre-fix cards)
+        "no_branch_gh_closed": 0,  # no-branch cards whose GH issue is already closed
     }
 
     # ... (existing logic, increment skip_counters at each skip) ...
@@ -1160,6 +1196,47 @@ if pr_for_branch_is_merged(branch):
 ```
 
 This eliminates the false alarm and cleans up stale `done` cards automatically.
+
+### Pitfall: Cards with null `branch_name` (Pre-Fix Epoch)
+
+Cards created before `prefill_messages_file: SOUL.md` was set had `workspace_kind=scratch` and `branch_name=NULL` in the DB. The original consolidation SQL filter (`branch_name IS NOT NULL AND branch_name != ''`) silently skipped them. After removing that filter (Aug 2026), these cards now enter processing but have no branch to inspect.
+
+**Fix:** Add a null-branch handler in `check_dedup_and_branch()`:
+
+```python
+if not branch:
+    gh_nums = re.findall(r'\[GH-(\d+)\]', entry.get("title", "") or "")
+    if gh_nums:
+        rc, out, _ = run(["gh", "issue", "view", gh_nums[0], "--repo", REPO,
+                          "--json", "state", "--jq", ".state"], timeout=15)
+        if rc == 0 and out.strip() == "CLOSED":
+            skip_counters["no_branch_gh_closed"] += 1
+            archive_coder_card(entry["coder_id"])
+            return False
+    skip_counters["no_branch_card"] += 1
+    return False
+```
+
+This auto-archives cards without branches when the linked GH issue is already closed.
+
+### Pitfall: Blocked Consolidation Groups Still Waiting Out 24h Cooldown
+
+When a consolidation group is blocked by `is_blocked()` (3+ failures within 24h), the script waits silently. If the GH issue was actually closed by a different PR during the cooldown, the cards stay blocked unnecessarily.
+
+**Fix:** `is_blocked()` should check the GH issue state first:
+
+```python
+def is_blocked(gh_num):
+    """Check if a GH issue has exceeded retry limit within 24h, or is already closed."""
+    rc, out, _ = run(["gh", "issue", "view", str(gh_num), "--repo", REPO,
+                      "--json", "state", "--jq", ".state"], timeout=15)
+    if rc == 0 and out.strip() == "CLOSED":
+        return True  # blocked — issue already resolved, card can be archived
+    state = load_retry_state()
+    ...
+```
+
+When the consolidation loop encounters a blocked group, it should also check if the issue is closed and archive the cards rather than skipping silently.
 
 ### Verification
 
