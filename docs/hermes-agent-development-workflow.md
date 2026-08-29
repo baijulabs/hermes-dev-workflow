@@ -152,9 +152,10 @@ Phase 1: ingest-     Issue/CI/deploy failure ingestion into kanban
 Phase 2: queue-      Agent queue processing
 Phase 3: build-      PR consolidation, review resolution
 Phase 4: merge-      PR merge (only when CI is green)
-Phase 5: audit-      Health checks, stranded worktrees, pruning
-Phase 6: verify-     Post-deploy QA, weekly dogfood
-Phase 7: sync-       GH milestone comments
+Phase 5: deploy-     GitHub Actions: ci.yml (tests) + deploy.yml (deploy)
+Phase 6: audit-      Health checks, stranded worktrees, pruning
+Phase 7: verify-     Post-deploy QA, weekly dogfood
+Phase 8: sync-       GH milestone comments
 ```
 
 ---
