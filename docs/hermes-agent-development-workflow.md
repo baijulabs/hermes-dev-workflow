@@ -49,7 +49,7 @@ GitHub Issue (ready-for-agent label)  ← SINGLE SOURCE OF TRUTH
 ┌──────────────────────────────────────────────┐
 │  04-merge · merge-ready-prs (every 10m)      │
 │  Merges only when CI=clean AND no conflicts   │
-│  Single version bump per tick after merge      │
+│  Split: ci.yml = tests, deploy.yml = deploy only          │
 └──────────────────────────────────────────────┘
         │
         ▼  PR merged → deploy.yml triggers
@@ -247,12 +247,11 @@ Phase 7: sync-       GH milestone comments
 ```
 build-consolidate-prs (every 5m)   creates PR → CI triggers
         ↓
-CI runs (test jobs only —          ~15-20 min
-deploy does NOT run on PR create)
+ci.yml (tests only)                ~15-20 min — triggered by PR create/sync
         ↓
 merge-ready-prs (every 10m)        checks MERGEABLE + clean → merges
         ↓
-deploy.yml triggered on            pull_request_target closed + merged
+PR merged to main → deploy.yml     triggered by pull_request_target closed + merged
         ↓
 Deploy to Staging runs
         ↓
@@ -312,9 +311,22 @@ The fix is pushed directly to the existing PR branch — no new PR is created.
 
 ---
 
+## CI Pipeline (ci.yml)
+
+Triggered by `pull_request_target` (opened, synchronize, reopened) on PRs targeting `main` and `push` to `main`.
+
+Jobs run: lint, backend-fast-test, backend-slow-test (push-to-main only), frontend-unit-test, cache-primer.
+
+**No GCP secrets, no deploy steps.** Safe to re-trigger from any cron script via:
+```bash
+gh workflow run ci.yml --ref <branch>
+```
+
 ## Deploy Pipeline (deploy.yml)
 
-Triggered by `pull_request_target` events on PRs targeting `main` and `workflow_dispatch`.
+Triggered by `pull_request_target closed + merged` (PR merged to main), `push` tag (`v*.*.*`), or `workflow_dispatch` (main only).
+
+**Does not run tests.** CI must pass before a PR is merged — required status checks on the PR provide the gate.
 
 ### Key Gating Logic
 
