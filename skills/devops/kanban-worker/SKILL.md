@@ -22,7 +22,7 @@ Your workspace kind determines how you should behave inside `$HERMES_KANBAN_WORK
 |---|---|---|
 | `scratch` | Fresh tmp dir, yours alone | Read/write freely; it gets GC'd when the task is archived. |
 | `dir:<path>` | Shared persistent directory | Other runs will read what you write. Treat it like long-lived state. Path is guaranteed absolute (the kernel rejects relative paths). |
-| `worktree` | Git worktree at the resolved path | **For coders** (new work to create):<br>`git worktree add -b wt/$HERMES_KANBAN_TASK <path> $HERMES_KANBAN_BRANCH`<br>Creates a new worktree branch from the base, commits are your own.<br><br>**For reviewers** (verify coder's work):<br>`git worktree add <path> $HERMES_KANBAN_BRANCH`<br>NO `-b` flag — checks out the coder's existing branch directly. You are in read-only review mode on their branch.<br><br>**If `$HERMES_KANBAN_BRANCH` is NOT set** (no base specified): from the main repo, run:<br>`git worktree add -b wt/$HERMES_KANBAN_TASK <path> HEAD`<br>The `-b` flag is CRITICAL — without it, git checks out an EXISTING branch (which doesn't exist yet) and falls through to detached HEAD. Commits in detached HEAD are orphaned when the worktree is pruned — they have no branch ref and the consolidation script cannot find them. Always use `-b`. |
+| `worktree` | Git worktree at the resolved path | **For coders** (new work to create):<br>`git worktree add -b wt/$HERMES_KANBAN_TASK <path> $HERMES_KANBAN_BRANCH`<br>Creates a new worktree branch from the base, commits are your own.<br><br>**For reviewers** (verify coder's work):<br>Reviewers get their OWN unique branch (auto-derived `wt/t_<reviewer-id>`). They inspect the coder's files by fetching from origin and using `git show`/`git diff`/`git log` — they cannot check out the coder's branch because git forbids two worktrees on the same branch.<br><br>**If `$HERMES_KANBAN_BRANCH` is NOT set** (no base specified): from the main repo, run:<br>`git worktree add -b wt/$HERMES_KANBAN_TASK <path> HEAD`<br>The `-b` flag is CRITICAL — without it, git checks out an EXISTING branch (which doesn't exist yet) and falls through to detached HEAD. Commits in detached HEAD are orphaned when the worktree is pruned — they have no branch ref and the consolidation script cannot find them. Always use `-b`. |
 
 ### ⚠️ BRANCH GUARDRAIL — CRITICAL
 
@@ -93,21 +93,39 @@ If `$HERMES_TENANT` is set, the task belongs to a tenant namespace. When reading
 
 ### Reviewer-specific: Finding the coder's files
 
-If you are a **reviewer** (your task has a parent coder card), your worktree should have been created on the coder's branch. If expected files are missing:
+If you are a **reviewer** (your task has a parent coder card), you are on your OWN unique worktree branch (e.g. `wt/t_<reviewer-id>`). **You cannot be on the coder's branch** — git does not allow two worktrees to check out the same branch simultaneously. The orchestrator gave you a unique branch by design. To inspect the coder's files:
 
-1. **Check what branch you're on:** `git branch --show-current`. You should be on the coder's branch (e.g. `wt/t_<coder-id>`), not your own task's branch.
-2. **If on the wrong branch:** The orchestrator didn't pass the coder's branch. Check `$HERMES_KANBAN_BRANCH` — if set, re-create your worktree:
-   ```
-   git worktree add <workspace-path> $HERMES_KANBAN_BRANCH
-   ```
-   If not set, look up the parent task via `kanban_show()` and check its `branch_name` field.
-3. **Fetch the coder's branch from origin** if not local:
-   ```
+1. **Fetch the coder's branch from origin** (the coder MUST have pushed before completing):
+   ```bash
    git fetch origin wt/t_<coder-id>
-   git worktree add <workspace-path> origin/wt/t_<coder-id>
    ```
-4. **Last resort: check the coder's local worktree on disk.** The coder's worktree is at `<repo>/.worktrees/<coder-task-id>/`. The files are there if the coder committed but didn't push.
-5. **If all above fails**, block the task: `kanban_block(reason="review-cannot-find-files: expected file <name> not found in coder's worktree or branch")`
+
+2. **List changed files**:
+   ```bash
+   git diff --name-only origin/main..origin/wt/t_<coder-id>
+   ```
+
+3. **Read specific file content**:
+   ```bash
+   git show origin/wt/t_<coder-id>:path/to/file
+   ```
+
+4. **Read the full diff**:
+   ```bash
+   git diff origin/main..origin/wt/t_<coder-id>
+   ```
+
+5. **Check what commits were made**:
+   ```bash
+   git log --oneline origin/main..origin/wt/t_<coder-id>
+   ```
+
+6. **Last resort: check the coder's local worktree on disk** if the coder committed but didn't push:
+   ```bash
+   ls <repo>/.worktrees/<coder-task-id>/
+   ```
+
+7. **If all above fails**, block the task: `kanban_block(reason="review-cannot-find-files: expected file <name> not found. Coder may not have pushed their branch.")`
 
 ## Good summary + metadata shapes
 
