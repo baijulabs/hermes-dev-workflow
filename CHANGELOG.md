@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **CI/CD workflow split:** Monolithic `deploy.yml` split into `ci.yml` (tests only, no GCP secrets) and `deploy.yml` (deploy only, triggered by PR merge/tag/dispatch). `ingest-ci-failures` can safely re-trigger `ci.yml` without ever risking a deploy from a worktree branch.
+- **CHANGELOG auto-release on deploy:** New `scripts/release-changelog.py` moves `[Unreleased]` content into a versioned `[X.Y.Z] — YYYY-MM-DD` section after every staging deploy. Committed together with the version bump.
+
+### Changed
+- **Workflow-level deploy guard:** `deploy.yml` now has a `workflow-guard` job that blocks any `workflow_dispatch` from a non-`main` branch. Prevents accidental staging deploys from worktree/PR branches.
+- **`ingest-ci-failures` no longer re-triggers CI.** The `rerun_ci()` function (which called `gh workflow run deploy.yml --ref <branch>`) was removed entirely. The script now only detects and queues failures — never dispatches any workflow.
+
+### Fixed
+- **Reviewer branch collision:** Git refused to check out the same branch in two worktrees. Fixed reviewer inspection to use their own unique branch and inspect coder files via `git show origin/<coder-branch>:path`.
+- **Reviewer workspace blindness:** Reviewer cards using `workspace_kind=scratch` got an empty temp dir. Fixed by using `workspace="worktree"` with the coder's branch name.
+- **Orchestrator profile allowlist:** SOUL.md now restricts card assignments to `coder`, `code-reviewer`, `qa` only — prevents `personal-assistant` from being misassigned to dev work.
+- **`gh issue create --label` silent failure:** Label must exist in repo before use. Verified labels exist before creating issues.
+- **Reviewer card branch parameter:** SOUL.md updated — reviewer `--branch` must not use the coder's branch name (git worktree collision). Reviewer gets own unique branch from `--branch` omission.
+
 ## [2.1.0] - 2026-08-12
 
 ### Changed
