@@ -325,6 +325,29 @@ The `deploy-to-staging` job has this condition:
 
 **Deploy-to-staging does NOT run on PR creation or update.** Only test jobs run on those events.
 
+### CHANGELOG Release on Deploy
+
+After every successful staging deploy, the pipeline runs `scripts/release-changelog.py` which:
+
+1. Reads the current version from `backend/pyproject.toml`
+2. Moves all content from the `[Unreleased]` section into a new `[X.Y.Z] — YYYY-MM-DD` section
+3. Resets `[Unreleased]` to empty
+4. Commits `CHANGELOG.md` together with the version bump (same commit: `chore: bump version to X.Y.Z [skip ci]`)
+
+This ensures every deploy produces a timestamped changelog entry. Developers add their changes to `[Unreleased]` during development using standard headings (`### Added`, `### Fixed`, `### Changed`, `### Removed`, `### Tests`).
+
+| File | Purpose |
+|------|---------|
+| `scripts/release-changelog.py` | Moves `[Unreleased]` → versioned section |
+| `.github/workflows/deploy.yml` | Runs the script before version bump, adds `CHANGELOG.md` to commit |
+| `CHANGELOG.md` | Canonical changelog — Never edit versioned entries retroactively |
+
+To run manually:
+```bash
+./scripts/release-changelog.py                # release with current pyproject.toml version
+./scripts/release-changelog.py --version 0.58.0  # release with explicit version
+```
+
 ### Common Pitfalls
 
 | Pitfall | Symptom | Fix |
