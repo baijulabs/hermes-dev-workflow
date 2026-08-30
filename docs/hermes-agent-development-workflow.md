@@ -420,7 +420,7 @@ The `qa` profile runs after every successful staging deploy.
 ### Reporting
 - **All pass:** Brief Telegram confirmation
 - **Any failure:** Telegram alert with failure summary + GitHub QA report issue
-- **Regression:** New GitHub issue with `bug` + `QA review` labels
+- **Regression:** Every finding (all severities) gets a GH sub-issue under the main QA report with `QA review` + `dogfood` labels — created via `gh issue create --parent <report-issue>`
 
 ---
 
