@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Workflow-level deploy guard:** `deploy.yml` now has a `workflow-guard` job that blocks any `workflow_dispatch` from a non-`main` branch. Prevents accidental staging deploys from worktree/PR branches.
+- **\`build-consolidate-prs\` notification filter:** Only notifies on actionable items (PRs created, \`branch_lost\`, \`no_branch_card\`). Silently suppresses resolved/archived categories (already\_on\_main, pr\_already\_exists, already\_merged, etc.) — the script still processes them internally but no longer bothers the user with unnecessary notifications.
 - **`ingest-ci-failures` no longer re-triggers CI.** The `rerun_ci()` function (which called `gh workflow run deploy.yml --ref <branch>`) was removed entirely. The script now only detects and queues failures — never dispatches any workflow.
 
 ### Fixed

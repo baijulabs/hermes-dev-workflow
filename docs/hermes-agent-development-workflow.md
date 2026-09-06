@@ -293,6 +293,25 @@ build-consolidate-prs.py picks up the pair
 ### Zero-Commits Auto-Archive
 Before creating a PR, `build-consolidate-prs` runs `git rev-list --count origin/main..branch`. If the count is 0 (all content already on main via other paths), it archives the coder+reviewer cards and skips PR creation. This prevents "No commits between main and branch" errors.
 
+### Notification Filter — Actionable Items Only
+
+`build-consolidate-prs` only notifies the user when there is something to act on:
+
+| Notified | Skip Reason | Meaning | Action Required |
+|----------|-------------|---------|----------------|
+| ✅ | PRs created | Consolidation or individual PR created | Review + merge the PR(s) |
+| ✅ | `branch_lost` | Branch ref missing from local + origin + worktree recovery failed | May need manual investigation |
+| ✅ | `no_branch_card` | Coder card has no `branch_name` (created with `workspace_kind=scratch`) | May need manual intervention |
+| ❌ | `already_on_main` | All commits already in main via other paths | Silently archived |
+| ❌ | `pr_already_exists` | PR already open for this branch | Silently skipped |
+| ❌ | `already_merged` | Branch was merged via a PR already | Silently archived |
+| ❌ | `no_branch_gh_closed` | GH issue already closed, cards archived | Silently archived |
+| ❌ | `branch_empty` | Branch has zero commits vs main | Silently skipped |
+| ❌ | `dedup_already_pr` | Same commit set already processed | Silently skipped |
+| ❌ | `recovery_succeeded` | Branch recovered from worktree on disk | Silently handled |
+
+The script still processes all categories internally (archives cards, deduplicates). Only actionable items generate notifications.
+
 ### Merge Conflict Resolution Flow
 ```
 merge-ready-prs: detects CONFLICTING → skips PR
