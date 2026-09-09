@@ -300,8 +300,9 @@ Before creating a PR, `build-consolidate-prs` runs `git rev-list --count origin/
 | Notified | Skip Reason | Meaning | Action Required |
 |----------|-------------|---------|----------------|
 | ✅ | PRs created | Consolidation or individual PR created | Review + merge the PR(s) |
-| ✅ | `branch_lost` | Branch ref missing from local + origin + worktree recovery failed | May need manual investigation |
+| ✅ | `branch_lost` | Branch ref missing from local + origin + worktree recovery failed, **and GH issue still OPEN** | May need manual investigation |
 | ✅ | `no_branch_card` | Coder card has no `branch_name` (created with `workspace_kind=scratch`) | May need manual intervention |
+| ❌ | `branch_lost_issue_closed` | Branch lost but the GH issue is already closed (expected — fix came via other path) | Silently archived
 | ❌ | `already_on_main` | All commits already in main via other paths | Silently archived |
 | ❌ | `pr_already_exists` | PR already open for this branch | Silently skipped |
 | ❌ | `already_merged` | Branch was merged via a PR already | Silently archived |
