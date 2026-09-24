@@ -20,7 +20,7 @@ SCRIPTS_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPTS_DIR))
 from agent_queue import enqueue_review_failed
 
-KANBAN_DB = Path.home() / ".hermes" / "kanban" / "boards" / "${HERMES_KANBAN_BOARD:-project-dev}" / "kanban.db"
+KANBAN_DB = Path.home() / ".hermes" / "kanban" / "boards" / "liberkyma-dev" / "kanban.db"
 
 
 def main():
@@ -32,6 +32,9 @@ def main():
     cursor = conn.cursor()
 
     # 1. Find blocked code-reviewer cards
+    # NOTE: We process ALL blocked reviewers, not just those with review-failed: prefix.
+    # The parse_findings fallback handles prose-only reasons. Loop detection (3+ cycles)
+    # catches cards that shouldn't be auto-resolved.
     cursor.execute("""
         SELECT DISTINCT t.id, t.title, t.body, t.branch_name
         FROM tasks t
@@ -39,7 +42,6 @@ def main():
         WHERE t.status = 'blocked'
           AND t.assignee = 'code-reviewer'
           AND e.kind = 'blocked'
-          AND json_extract(e.payload, '$.reason') LIKE 'review-failed:%'
         ORDER BY t.created_at DESC
     """)
     blocked_reviewers = cursor.fetchall()
@@ -66,7 +68,10 @@ def main():
         reason = payload.get("reason", "")
 
         if not reason.startswith("review-failed:"):
-            continue  # non-review-failed block → skip
+            # Non-review-failed block — still process through the fallback parser.
+            # The reason text is used directly as the finding. Loop detection
+            # (3+ cycles) still escalates problematic cards.
+            pass
 
         # 3. Find the parent coder card (via task_links)
         cursor.execute("""

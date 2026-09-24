@@ -62,12 +62,20 @@ def main():
         count = int(out.strip())
         if count == 0:
             continue  # already merged
+        if count > 200:
+            continue  # too stale — 200+ commits behind main, impractical to cherry-pick
 
         # Check if branch tip is an ancestor of main (content merged via other path)
         rc, out, _ = run(["git", "rev-parse", "--verify", f"origin/{branch}"])
         ref = f"origin/{branch}" if rc == 0 else branch
+        # Skip branches with NO common ancestor with main (disconnected history).
+        # These are orphaned refs from rewritten/relocated clone history — they
+        # cannot be merged via the normal pipeline and produce triage noise.
+        rc, mb_out, _ = run(["git", "merge-base", f"{ref}", "origin/main"], timeout=10)
+        if rc != 0 or not mb_out.strip():
+            continue
         # Content-based check: if no files differ from main, content is already merged
-        rc2, diff_out, _ = run(["git", "diff", "origin/main..origin/" + branch, "--stat"], timeout=10)
+        rc2, diff_out, _ = run(["git", "diff", f"origin/main..{ref}", "--stat"], timeout=10)
         if rc2 == 0 and not diff_out.strip():
             continue  # content already on main (squash-merged)
         rc, _, _ = run(["git", "merge-base", "--is-ancestor", f"{ref}", "origin/main"], timeout=10)
@@ -80,14 +88,24 @@ def main():
         if rc == 0 and out.strip() != "0":
             continue  # PR exists (open/closed/merged)
 
-        # Skip if kanban shows this is a done coder awaiting consolidation
-        m = re.match(r'^wt/t_(t_.+)$', branch)
+        # Skip if kanban shows this is a done coder awaiting consolidation,
+        # or the owning card itself is already terminal (archived/cancelled/done).
+        # The branch dir name is wt/t_<task_id>, so the owning task is the id itself.
+        m = re.match(r'^wt/t_(.+)$', branch)
         if m:
             task_id = m.group(1)
             try:
                 import sqlite3
                 conn = sqlite3.connect(KANBAN_DB)
                 cur = conn.cursor()
+                # Owning card is terminal -> worktree is dead weight, not stranded work
+                cur.execute(
+                    "SELECT 1 FROM tasks WHERE id = ? AND status IN ('done', 'archived', 'cancelled') LIMIT 1",
+                    (task_id,),
+                )
+                if cur.fetchone():
+                    conn.close()
+                    continue
                 # Check: coder card done AND linked reviewer done
                 cur.execute("""
                     SELECT 1 FROM tasks c
@@ -117,8 +135,11 @@ def main():
     results.sort(key=lambda x: x[1], reverse=True)
     created = 0
     for branch, count, local_only in results[:MAX_PER_RUN]:
-        # Build commit list for issue body
-        rc, out, _ = run(["git", "log", "--oneline", f"origin/main..origin/{branch}",
+        # Recompute ref (local-only branches have no origin/<branch>)
+        rc, _, _ = run(["git", "rev-parse", "--verify", f"origin/{branch}"])
+        ref = f"origin/{branch}" if rc == 0 else branch
+        # Build commit list for issue body (use local ref fallback for local-only branches)
+        rc, out, _ = run(["git", "log", "--oneline", f"origin/main..{ref}",
                           "--format=%s", "--reverse"])
         commits = [c for c in out.splitlines() if c.strip()]
 
