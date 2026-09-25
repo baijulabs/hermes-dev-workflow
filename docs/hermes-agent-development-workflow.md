@@ -195,7 +195,7 @@ Phase 8: sync-       GH milestone comments
 
 | Job | Schedule | Type | Deliver | Purpose |
 |-----|----------|------|---------|---------|
-| `audit-stranded-worktrees` | every 15m | no_agent | telegram | Flags worktree branches with unique commits not on main and no pending kanban work. |
+| `audit-stranded-worktrees` | every 15m | no_agent | telegram | Flags worktree branches with unique commits not on main and no pending kanban work. Silently skips branches whose card is `done`/`archived`, done+done coder/reviewer pairs awaiting consolidation, and recovery/conflict-resolution cards (stranded/merge-conflict/PRFIX/cherry-pick titles). |
 | `audit-worktree-collisions` | every 5m | no_agent | telegram | Detects worktree branch conflicts (same branch in multiple worktrees). |
 | `audit-pr-guard` | every 5m | no_agent | telegram | Enforces PR guard conditions (main-tip, no workflow_dispatch from non-main). |
 | `audit-archive-cancelled` | every 15m | no_agent | telegram | Archives cancelled or timed-out kanban cards. |

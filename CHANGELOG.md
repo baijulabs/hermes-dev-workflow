@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`ingest-ci-failures` no longer re-triggers CI.** The `rerun_ci()` function (which called `gh workflow run deploy.yml --ref <branch>`) was removed entirely. The script now only detects and queues failures — never dispatches any workflow.
 
 ### Fixed
+- **`audit-stranded-worktrees` false-positive flood:** The script derived the kanban task ID from a `wt/t_<hex>` branch as `<hex>` — but DB IDs are `t_<hex>`. Every kanban skip-check (`WHERE id = ?`) never matched, so all done-card branches got flagged as stranded and spawned recovery cards → new strands (self-amplifying loop; e.g. GH-5870..5874 were all false positives). Fixed the ID mapping to `f"t_{m.group(1)}"` and added an explicit skip for recovery/conflict-resolution cards (stranded / merge-conflict / PRFIX / cherry-pick / lint-fix titles) whose local branches are phantom worktrees.
 - **Reviewer branch collision:** Git refused to check out the same branch in two worktrees. Fixed reviewer inspection to use their own unique branch and inspect coder files via `git show origin/<coder-branch>:path`.
 - **Reviewer workspace blindness:** Reviewer cards using `workspace_kind=scratch` got an empty temp dir. Fixed by using `workspace="worktree"` with the coder's branch name.
 - **Orchestrator profile allowlist:** SOUL.md now restricts card assignments to `coder`, `code-reviewer`, `qa` only — prevents `personal-assistant` from being misassigned to dev work.
