@@ -10,11 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **CI/CD workflow split:** Monolithic `deploy.yml` split into `ci.yml` (tests only, no GCP secrets) and `deploy.yml` (deploy only, triggered by PR merge/tag/dispatch). `ingest-ci-failures` can safely re-trigger `ci.yml` without ever risking a deploy from a worktree branch.
 - **CHANGELOG auto-release on deploy:** New `scripts/release-changelog.py` moves `[Unreleased]` content into a versioned `[X.Y.Z] — YYYY-MM-DD` section after every staging deploy. Committed together with the version bump.
+- **`ingest-deploy-failures`: merged-PR deploy detection.** Tag merged PR deploy failures with `merged_pr_deploy=True`. The script now treats deploy failures from merged PRs as main-level failures — the old `branch == "main"` filter silently skipped these.
 
 ### Changed
 - **Workflow-level deploy guard:** `deploy.yml` now has a `workflow-guard` job that blocks any `workflow_dispatch` from a non-`main` branch. Prevents accidental staging deploys from worktree/PR branches.
 - **\`build-consolidate-prs\` notification filter:** Only notifies on actionable items (PRs created, \`branch_lost\`, \`no_branch_card\`). Silently suppresses resolved/archived categories (already\_on\_main, pr\_already\_exists, already\_merged, etc.) — the script still processes them internally but no longer bothers the user with unnecessary notifications.
 - **`ingest-ci-failures` no longer re-triggers CI.** The `rerun_ci()` function (which called `gh workflow run deploy.yml --ref <branch>`) was removed entirely. The script now only detects and queues failures — never dispatches any workflow.
+- **`ingest-deploy-failures` query scope increased.** `--limit` raised from 5 to 20 with a `--created >=2days` time window. The old `--limit 5` was too small — failures could be pushed out of the query result by newer successful runs, causing them to be silently skipped.
+- **`ingest-deploy-failures` delivery target.** Changed from bare `"telegram"` to explicit `"telegram:<chat_id>:<thread_id>"` format to resolve "no delivery target resolved" errors.
 
 ### Fixed
 - **`audit-stranded-worktrees` false-positive flood:** The script derived the kanban task ID from a `wt/t_<hex>` branch as `<hex>` — but DB IDs are `t_<hex>`. Every kanban skip-check (`WHERE id = ?`) never matched, so all done-card branches got flagged as stranded and spawned recovery cards → new strands (self-amplifying loop; e.g. GH-5870..5874 were all false positives). Fixed the ID mapping to `f"t_{m.group(1)}"` and added an explicit skip for recovery/conflict-resolution cards (stranded / merge-conflict / PRFIX / cherry-pick / lint-fix titles) whose local branches are phantom worktrees.

@@ -14,14 +14,15 @@ import os
 import subprocess
 import sys
 import time
+from datetime import datetime, timedelta
 from pathlib import Path
 
 STATE_DIR = Path.home() / ".hermes" / "profiles" / "orchestrator" / "state"
 STATE_FILE = STATE_DIR / "staging-deploy-watch.json"
-REPO = "baijulabs/Liberkyma"
+REPO = "<owner>/<repo>"  # REPLACE with your GitHub owner/repo
 WORKFLOW_ID = "deploy.yml"
-REPO_DIR = Path.home() / "Liberkyma"
-KANBAN_DB = Path.home() / ".hermes" / "kanban" / "boards" / "liberkyma-dev" / "kanban.db"
+REPO_DIR = Path.home() / "<project-dir>"  # REPLACE with your project directory name
+KANBAN_DB = Path.home() / ".hermes" / "kanban" / "boards" / "<your-board-name>" / "kanban.db"
 
 def ensure_state():
     STATE_DIR.mkdir(parents=True, exist_ok=True)
@@ -45,6 +46,8 @@ def gh(*args, timeout=60):
     return result.stdout.strip()
 
 EVENTS = ["workflow_dispatch", "pull_request_target", "push"]
+RUN_LIMIT = 20  # fetch enough to reach recent failures even after newer successes
+SINCE_DAYS = 2  # look back this many days to scope the query
 
 def is_pr_still_open(branch):
     """Check if the branch has an open PR. Returns True for open/active, False for merged/closed."""
@@ -71,11 +74,13 @@ def get_latest_failed_runs():
     bumps that fail independently of our code and should not trigger fix cards."""
     all_failed = []
     for event in EVENTS:
+        since = (datetime.utcnow() - timedelta(days=SINCE_DAYS)).strftime("%Y-%m-%dT%H:%M:%SZ")
         data = gh("run", "list",
                   "--repo", REPO,
                   "--workflow", WORKFLOW_ID,
                   "--event", event,
-                  "--limit", "5",
+                  "--created", f">={since}",
+                  "--limit", str(RUN_LIMIT),
                   "--json", "databaseId,conclusion,createdAt,displayTitle,headBranch,url,status,event")
         if not data:
             continue
@@ -98,6 +103,7 @@ def get_latest_failed_runs():
                     deploy_status, _ = get_deploy_job_status(r["databaseId"])
                     if deploy_status in ("success", "failed", "skipped"):
                         # Deploy job was attempted — this is a merge event, keep it
+                        r["merged_pr_deploy"] = True  # tag for main() to treat as main failure
                         filtered.append(r)
                     # deploy_status == "unknown" means no deploy job found — stale CI run, skip
             completed = filtered
@@ -267,7 +273,7 @@ def create_test_failure_issue(run, test_failures):
                 "--body", body,
                 "--label", "ready-for-agent,test-failure")
     if result:
-        # Extract issue number from output like "https://github.com/baijulabs/Liberkyma/issues/123"
+        # Extract issue number from output like "https://github.com/<owner>/<repo>/issues/123"
         try:
             return int(result.rsplit("/", 1)[-1])
         except (ValueError, IndexError):
@@ -328,24 +334,67 @@ def main():
             save_state(state)
             return
     else:
-        # Non-main branches are handled by ingest-ci-failures (every 5m).
-        # Skip silently — ingest-ci-failures will detect CI failures on open PRs
-        # and enqueue fix tasks via the agent queue.
-        state["last_run_id"] = run_id
-        state["last_checked"] = int(time.time())
-        save_state(state)
-        return
+        # Non-main branch — look up its open PR for issue linking
+        pr_info = has_open_pr_for_branch(branch)
+        if pr_info:
+            # Check dedup: is there already an active coder card for this branch?
+            card_result = subprocess.run(
+                ["sqlite3", str(KANBAN_DB),
+                 f"SELECT COUNT(*) FROM tasks WHERE branch_name = '{branch}' AND status NOT IN ('done','cancelled','archived') AND assignee = 'coder';"],
+                capture_output=True, text=True, timeout=10,
+            )
+            try:
+                open_branch_cards = int(card_result.stdout.strip())
+            except (ValueError, TypeError):
+                open_branch_cards = 0
+
+            if open_branch_cards > 0:
+                state["last_run_id"] = run_id
+                state["last_checked"] = int(time.time())
+                save_state(state)
+                return
+        # else: branch has no open PR (stray/merged). Report anyway for visibility.
 
     # ── Deploy vs Test failure classification ──
     deploy_status, deploy_error = get_deploy_job_status(run_id)
     test_failures = get_test_failed_jobs(run_id)
 
-    # Create GH issue for test failures BEFORE deploy-status filtering,
-    # so deploy status does not suppress issue creation.
+    # Treat merged-PR deploys as main failures (the code was merged to main,
+    # the deploy job ran against main's code — the branch name is just metadata)
+    is_merged_pr = run.get("merged_pr_deploy", False)
+
+    # DEDUP: Check for open kanban fix cards when this is a main-level failure
+    if branch == "main" or is_merged_pr:
+        # Determine which branch name to use for dedup lookup
+        dedup_branch = "main" if is_merged_pr else branch
+        result = subprocess.run(
+            ["sqlite3", str(KANBAN_DB),
+             f"SELECT COUNT(*) FROM tasks WHERE branch_name = '{dedup_branch}' AND status NOT IN ('done','cancelled','archived') AND assignee = 'coder';"],
+            capture_output=True, text=True, timeout=10,
+        )
+        try:
+            open_cards = int(result.stdout.strip())
+        except (ValueError, TypeError):
+            open_cards = 0
+
+        if open_cards > 0:
+            # Fix cards are still in flight — let them finish silently
+            state["last_run_id"] = run_id
+            state["last_checked"] = int(time.time())
+            save_state(state)
+            return
+    else:
+        # Non-main branches (open PR CI failures) are handled by ingest-ci-failures (every 5m).
+        # Skip silently
+        state["last_run_id"] = run_id
+        state["last_checked"] = int(time.time())
+        save_state(state)
+        return
+
+    # Create GH issue for test failures (deploy succeeded but tests failed)
     created_issue = None
     if test_failures:
-        # PR dedup is handled above (open_cards > 0 returns early);
-        # if we reached here, no fix cards are in flight.
+        # If we reached here, no fix cards are in flight (dedup passed above)
         created_issue = create_test_failure_issue(run, test_failures)
 
     # If deploy succeeded and no test failures, this run had a non-gating failure
