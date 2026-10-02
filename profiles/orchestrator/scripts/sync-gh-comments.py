@@ -6,6 +6,9 @@ Scans the kanban board for state transitions in the coder→reviewer pipeline
 and posts idempotent audit comments to linked GitHub issues. Never closes issues
 — that happens naturally via "Closes #XXX" in PR merge.
 
+Comments include the worker's full run summary (if available), not just a
+one-liner — see GH-5931 for the requirement.
+
 Runs as no_agent: true cron job. Empty stdout = nothing to do (silent delivery).
 Non-empty stdout = comments posted (for audit/debug).
 
@@ -56,12 +59,18 @@ def mark_posted(state, key, milestone):
 
 def gh_issue_comment(issue_num, body):
     """Post a comment to a GitHub issue. Returns True on success."""
-    result = subprocess.run(
-        ["gh", "issue", "comment", str(issue_num),
-         "--repo", REPO, "--body", body],
-        capture_output=True, text=True, timeout=30,
-    )
-    return result.returncode == 0
+    # Write body to a temp file to avoid shell quoting issues with backticks/$
+    body_file = STATE_DIR / f"gh-comment-{issue_num}-{int(time.time())}.tmp"
+    body_file.write_text(body)
+    try:
+        result = subprocess.run(
+            ["gh", "issue", "comment", str(issue_num),
+             "--repo", REPO, "--body-file", str(body_file)],
+            capture_output=True, text=True, timeout=30,
+        )
+        return result.returncode == 0
+    finally:
+        body_file.unlink(missing_ok=True)
 
 
 def gh_issue_is_open(issue_num):
@@ -116,6 +125,16 @@ def find_chain_root(cursor, card_id, assignee):
     return (None, None)
 
 
+def get_task_summary(cursor, task_id):
+    """Fetch the latest run summary for a kanban task."""
+    cursor.execute(
+        "SELECT summary FROM task_runs WHERE task_id = ? AND summary IS NOT NULL AND summary != '' ORDER BY id DESC LIMIT 1",
+        (task_id,),
+    )
+    row = cursor.fetchone()
+    return row[0] if row else None
+
+
 def scan_and_post():
     """Main scan loop: find milestone transitions and post comments."""
     state = load_state()
@@ -143,11 +162,14 @@ def scan_and_post():
             mark_posted(state, key, "decomposed")  # don't retry closed issues
             continue
 
+        summary = get_task_summary(cursor, key)
         body = (
             f"📋 **Decomposed** into implementation tasks.\n"
             f"Kanban orchestrator card: `{key}`.\n"
             f"The pipeline will post updates here as the fix progresses."
         )
+        if summary:
+            body += f"\n\n<details>\n<summary>Decomposition summary</summary>\n\n```\n{summary}\n```\n</details>"
         if gh_issue_comment(issue_num, body):
             mark_posted(state, key, "decomposed")
             posted_count += 1
@@ -172,10 +194,13 @@ def scan_and_post():
             mark_posted(state, key, "coder_done")
             continue
 
+        summary = get_task_summary(cursor, key)
         body = (
             f"✅ **Implementation complete** by coder (`{key}`).\n"
             f"Awaiting code review."
         )
+        if summary:
+            body += f"\n\n<details>\n<summary>Implementation summary</summary>\n\n```\n{summary}\n```\n</details>"
         if gh_issue_comment(issue_num, body):
             mark_posted(state, key, "coder_done")
             posted_count += 1
@@ -200,10 +225,13 @@ def scan_and_post():
             mark_posted(state, key, "reviewer_approved")
             continue
 
+        summary = get_task_summary(cursor, key)
         body = (
             f"✅ **Code review passed** (`{key}`).\n"
             f"Awaiting PR consolidation — the fix will be merged and deployed automatically."
         )
+        if summary:
+            body += f"\n\n<details>\n<summary>Review summary</summary>\n\n```\n{summary}\n```\n</details>"
         if gh_issue_comment(issue_num, body):
             mark_posted(state, key, "reviewer_approved")
             posted_count += 1
