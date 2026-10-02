@@ -169,7 +169,7 @@ def scan_and_post():
             f"The pipeline will post updates here as the fix progresses."
         )
         if summary:
-            body += f"\n\n<details>\n<summary>Decomposition summary</summary>\n\n```\n{summary}\n```\n</details>"
+            body += f"\n\n<details>\n<summary>Decomposition summary</summary>\n\n>{summary}\n</details>"
         if gh_issue_comment(issue_num, body):
             mark_posted(state, key, "decomposed")
             posted_count += 1
@@ -200,7 +200,7 @@ def scan_and_post():
             f"Awaiting code review."
         )
         if summary:
-            body += f"\n\n<details>\n<summary>Implementation summary</summary>\n\n```\n{summary}\n```\n</details>"
+            body += f"\n\n<details>\n<summary>Implementation summary</summary>\n\n>{summary}\n</details>"
         if gh_issue_comment(issue_num, body):
             mark_posted(state, key, "coder_done")
             posted_count += 1
@@ -231,7 +231,7 @@ def scan_and_post():
             f"Awaiting PR consolidation — the fix will be merged and deployed automatically."
         )
         if summary:
-            body += f"\n\n<details>\n<summary>Review summary</summary>\n\n```\n{summary}\n```\n</details>"
+            body += f"\n\n<details>\n<summary>Review summary</summary>\n\n>{summary}\n</details>"
         if gh_issue_comment(issue_num, body):
             mark_posted(state, key, "reviewer_approved")
             posted_count += 1
