@@ -14,15 +14,15 @@ import os
 import subprocess
 import sys
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 STATE_DIR = Path.home() / ".hermes" / "profiles" / "orchestrator" / "state"
 STATE_FILE = STATE_DIR / "staging-deploy-watch.json"
-REPO = "<owner>/<repo>"  # REPLACE with your GitHub owner/repo
+REPO = "baijulabs/Liberkyma"
 WORKFLOW_ID = "deploy.yml"
-REPO_DIR = Path.home() / "<project-dir>"  # REPLACE with your project directory name
-KANBAN_DB = Path.home() / ".hermes" / "kanban" / "boards" / "<your-board-name>" / "kanban.db"
+REPO_DIR = Path.home() / "Liberkyma"
+KANBAN_DB = Path.home() / ".hermes" / "kanban" / "boards" / "liberkyma-dev" / "kanban.db"
 
 def ensure_state():
     STATE_DIR.mkdir(parents=True, exist_ok=True)
@@ -74,7 +74,7 @@ def get_latest_failed_runs():
     bumps that fail independently of our code and should not trigger fix cards."""
     all_failed = []
     for event in EVENTS:
-        since = (datetime.utcnow() - timedelta(days=SINCE_DAYS)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        since = (datetime.now(timezone.utc) - timedelta(days=SINCE_DAYS)).strftime("%Y-%m-%dT%H:%M:%SZ")
         data = gh("run", "list",
                   "--repo", REPO,
                   "--workflow", WORKFLOW_ID,
@@ -273,7 +273,7 @@ def create_test_failure_issue(run, test_failures):
                 "--body", body,
                 "--label", "ready-for-agent,test-failure")
     if result:
-        # Extract issue number from output like "https://github.com/<owner>/<repo>/issues/123"
+        # Extract issue number from output like "https://github.com/baijulabs/Liberkyma/issues/123"
         try:
             return int(result.rsplit("/", 1)[-1])
         except (ValueError, IndexError):
