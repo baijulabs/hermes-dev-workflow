@@ -19,14 +19,19 @@ gh issue list --repo "$REPO" --label "$TRIGGER_LABEL" --state open --json number
 
     TASK_SIG="[GH-$ISSUE_NUM]"
 
-    # Use -F for fixed-string grep to avoid regex bracket issues
-    if ! hermes kanban --board "$BOARD_SLUG" list 2>/dev/null | grep -Fq "$TASK_SIG"; then
-        echo "Found new issue: #$ISSUE_NUM. Injecting into Hermes board: $BOARD_SLUG"
+        # Dedup via SQL — hermes kanban list is paginated and misses completed cards
+        KANBAN_DB="$HOME/.hermes/kanban/boards/$BOARD_SLUG/kanban.db"
+        EXISTING=$(sqlite3 "$KANBAN_DB" \
+          "SELECT COUNT(*) FROM tasks
+           WHERE title LIKE '%$TASK_SIG%'
+             AND status NOT IN ('done', 'archived', 'cancelled');" 2>/dev/null || echo 0)
+        if [ "$EXISTING" -eq 0 ]; then
+            echo "Found new issue: #$ISSUE_NUM. Injecting into Hermes board: $BOARD_SLUG"
 
-        # Create task with issue number in body for traceability
-        hermes kanban --board "$BOARD_SLUG" create "$TASK_SIG $TITLE" \
-            --body "GitHub Issue #$ISSUE_NUM: $BODY\n\nThe GH issue is the source of truth — never closed by automation, only by PR merge (Closes #XXX). Kanban cards are ephemeral implementation artifacts." \
-            --assignee orchestrator
+            # Create task with issue number in body for traceability
+            hermes kanban --board "$BOARD_SLUG" create "$TASK_SIG $TITLE" \
+                --body "GitHub Issue #$ISSUE_NUM: $BODY\\n\\nThe GH issue is the source of truth — never closed by automation, only by PR merge (Closes #XXX). Kanban cards are ephemeral implementation artifacts." \
+                --assignee orchestrator
     fi
 done || true
 
