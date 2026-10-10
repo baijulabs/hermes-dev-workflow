@@ -26,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Orchestrator profile allowlist:** SOUL.md now restricts card assignments to `coder`, `code-reviewer`, `qa` only — prevents `personal-assistant` from being misassigned to dev work.
 - **`gh issue create --label` silent failure:** Label must exist in repo before use. Verified labels exist before creating issues.
 - **Reviewer card branch parameter:** SOUL.md updated — reviewer `--branch` must not use the coder's branch name (git worktree collision). Reviewer gets own unique branch from `--branch` omission.
+- **`ingest-gh-issues` duplicate card creation:** Script used `hermes kanban list | grep "[GH-N]"` for dedup, but `list` is paginated and misses completed cards. Every sync tick created a new card for the same GH issue. Replaced with SQL query against the kanban DB matching the PR ingestion pattern.
+- **`build-consolidate-prs` repeated "branch lost" reports:** When a branch was consumed by a consolidation PR, `gh issue view` returned state `MERGED` (not `CLOSED`), so the cleanup check failed and the same card was reported as "branch lost" every cron tick. Fixed by accepting both `CLOSED` and `MERGED` as terminal states.
 
 ## [2.1.0] - 2026-08-12
 
