@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-10-10
+
 ### Added
 - **CI/CD workflow split:** Monolithic `deploy.yml` split into `ci.yml` (tests only, no GCP secrets) and `deploy.yml` (deploy only, triggered by PR merge/tag/dispatch). `ingest-ci-failures` can safely re-trigger `ci.yml` without ever risking a deploy from a worktree branch.
 - **CHANGELOG auto-release on deploy:** New `scripts/release-changelog.py` moves `[Unreleased]` content into a versioned `[X.Y.Z] — YYYY-MM-DD` section after every staging deploy. Committed together with the version bump.
