@@ -211,6 +211,12 @@ def group_cards_by_issue(db_path, cutoff):
 def check_dedup_and_branch(entry, seen_commit_sets, skip_lost=False):
     """Common pre-flight checks for a coder entry. Returns True if OK to process."""
     branch = entry["branch"]
+    title = entry.get("title", "") or ""
+
+    # Skip conflict-resolution cards — they're ephemeral worktrees, never PR'd
+    if title.startswith("Resolve merge conflicts") or title.startswith("Review: Resolve merge conflicts"):
+        return False, None
+
     count = get_branch_commit_count(branch)
     if count == -1:
         if not skip_lost:
