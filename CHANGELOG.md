@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`build-consolidate-prs` conflict-resolution card noise:** Done cards titled `Resolve merge conflicts` have no GH issue reference and their branches are ephemeral worktrees. The script fell through to `branch_lost` on every tick with no way to resolve. Fixed by skipping these titles early in `check_dedup_and_branch` — no consolidation attempt, no notification. Cards with lost branches are archived immediately.
+
 ## [2.2.0] - 2026-10-10
 
 ### Added
