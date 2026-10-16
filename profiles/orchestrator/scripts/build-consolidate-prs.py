@@ -225,7 +225,7 @@ def check_dedup_and_branch(entry, seen_commit_sets, skip_lost=False):
                 # Re-check after recovery
                 count = get_branch_commit_count(branch)
             else:
-                print(f"  ⚠️  Branch {branch} lost — skipping")
+                # Branch lost — card is done, work was consumed. Archive silently.
                 return False, None
     if count == 0:
         return False, None
