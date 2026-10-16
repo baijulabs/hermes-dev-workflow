@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **`build-consolidate-prs` lost-branch warnings:** Done cards with non-`[GH-N]` titles (e.g. `[PRFIX-...]`) had no way to resolve a lost branch — no GH issue to look up. The script now archives them silently: the card and its reviewer are both done, the work was consumed, the branch cleanup is expected. Warns only for cards where the work is genuinely at risk.
 - **`build-consolidate-prs` conflict-resolution card noise:** Done cards titled `Resolve merge conflicts` have no GH issue reference and their branches are ephemeral worktrees. The script fell through to `branch_lost` on every tick with no way to resolve. Fixed by skipping these titles early in `check_dedup_and_branch` — no consolidation attempt, no notification. Cards with lost branches are archived immediately.
 
 ## [2.2.0] - 2026-10-10
