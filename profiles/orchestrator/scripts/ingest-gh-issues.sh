@@ -26,14 +26,39 @@ gh issue list --repo "$REPO" --label "$TRIGGER_LABEL" --state open --json number
            WHERE title LIKE '%$TASK_SIG%'
              AND status NOT IN ('done', 'archived', 'cancelled');" 2>/dev/null || echo 0)
         if [ "$EXISTING" -eq 0 ]; then
-            echo "Found new issue: #$ISSUE_NUM. Injecting into Hermes board: $BOARD_SLUG"
+                    echo "Found new issue: #$ISSUE_NUM. Injecting into Hermes board: $BOARD_SLUG"
 
-            # Create task with issue number in body for traceability
-            hermes kanban --board "$BOARD_SLUG" create "$TASK_SIG $TITLE" \
-                --body "GitHub Issue #$ISSUE_NUM: $BODY\\n\\nThe GH issue is the source of truth — never closed by automation, only by PR merge (Closes #XXX). Kanban cards are ephemeral implementation artifacts." \
-                --assignee orchestrator
-    fi
-done || true
+                    # Create coder card as a WORKTREE (never scratch) so the worker gets a real branch.
+                    CODER_ID=$(hermes kanban --board "$BOARD_SLUG" create "$TASK_SIG $TITLE" \
+                        --body "GitHub Issue #$ISSUE_NUM: $BODY\\\\n\\\\nThe GH issue is the source of truth — never closed by automation, only by PR merge (Closes #XXX). Kanban cards are ephemeral implementation artifacts.
+
+        BASE BRANCH: main
+        CRITICAL: Before writing code, run \`git branch --show-current\` and verify you are on a worktree branch derived from the base branch above. You must NOT be on main or master. If you are, block the task immediately." \
+                        --assignee coder \
+                        --workspace worktree \
+                        --json 2>/dev/null | jq -r '.id')
+
+                    if [ -z "$CODER_ID" ] || [ "$CODER_ID" = "null" ]; then
+                        echo "  ⚠️  Failed to create coder card for #$ISSUE_NUM — skipping"
+                        continue
+                    fi
+                    echo "  Coder card: $CODER_ID (worktree, assignee=coder)"
+
+                    # Paired reviewer card (parent=coder) — review gate is mandatory for code changes.
+                    REVIEWER_ID=$(hermes kanban --board "$BOARD_SLUG" create "Review: $TASK_SIG $TITLE" \
+                        --body "Review implementation of GH #$ISSUE_NUM
+        Coder task: $CODER_ID
+        Files changed: per coder branch (fetch origin/wt/$CODER_ID per instructions in kanban-safety-protocols)
+        Verification: coder's expected test output / diff against origin/main
+
+        CRITICAL: You must NOT be on main or master. If you are, block the task immediately." \
+                        --assignee code-reviewer \
+                        --workspace worktree \
+                        --parent "$CODER_ID" \
+                        --json 2>/dev/null | jq -r '.id')
+                    echo "  Reviewer card: $REVIEWER_ID (worktree, parent=$CODER_ID)"
+            fi
+        done || true
 
 # 1b. PR INGESTION: Pull labeled PRs (review feedback, not automated failures).
 # pr-check-watch handles CI/conflict detection. This path handles human-initiated

@@ -22,11 +22,12 @@ GH issue (labeled ready-for-agent)
         ▼  every 5m
 ┌──────────────────────────────────────────────┐
 │  01-ingest · ingest-gh-issues                │
-│  Syncs labeled issues → orchestrator kanban  │
-│  card. Ingestion only — never closes issues. │
+│  Syncs labeled issues → READY-TO-IMPLEMENT   │
+│  coder + reviewer kanban cards (worktrees).  │
+│  Ingestion only — never closes issues.       │
 └──────────────────────────────────────────────┘
         │
-        ▼  auto-decompose → coder + reviewer cards
+        ▼  coder + reviewer cards on board, ready
 ┌──────────────────────────────────────────────┐
 │  02-queue · queue-agent-processor            │
 │  Dispatches coder (implements) + reviewer    │
