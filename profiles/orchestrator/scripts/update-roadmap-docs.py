@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 """
-update-roadmap-docs.py — Keeps ROADMAP.md and docs/PRD/ roadmap docs current.
+update-roadmap-docs.py — Keeps roadmap documentation current automatically.
 
-Two-track design (per July/October 2026 decisions):
+Two-track design (per October 2026 decisions):
   1. MERGED FEATURES (mechanical, fully automatic):
-     - Reuse deploy-watch.py state-file pattern (last_run_id).
-     - Query merged PRs since last run; append "Version History" rows + update
-       "Completed Initiatives" for any PR that closes a GH issue.
-     - Bump header "Last Updated" and version when new rows land.
+     - Reuse deploy-watch.py state-file pattern (last_pr_id).
+     - Query merged PRs since last run; update:
+       * ROADMAP.md        — Version History row (keyed by pyproject version) +
+                             Completed Initiative rows for PRs closing GH issues
+       * feature-map.md    — flip row to ✅ Ready when the row references the
+                             closed GH issue; bump header version; recount summary
+       * gap-analysis.md   — flip "- [ ]" to "- [x]" for resolved gaps
+     - Bump header "Last Updated" and current version on ROADMAP.md.
   2. UPCOMING ROADMAP (semi-automated, curator-assisted):
      - NEVER invents priorities. Generates a "candidate pool" digest:
        * open feat/epic/ux GH issues
@@ -27,8 +31,8 @@ Environment:
 import json
 import os
 import re
+import shutil
 import subprocess
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -48,6 +52,10 @@ STALE_DAYS = 14  # warn if any doc not updated in this long
 
 # GH issue labels that signal "upcoming feature work"
 FEATURE_LABELS = ("feat", "epic", "ux", "enhancement")
+
+GAP_FILE = "docs/PRD/comprehensive-codebase-gap-analysis.md"
+
+STATUS_ORDER = {"✅ Ready": 0, "🟡 Partial": 1, "❌ Pending": 2, "🔵 Removed": 3}
 
 
 def run(cmd, timeout=30, cwd=None):
@@ -74,15 +82,11 @@ def save_state(state):
     STATE_FILE.write_text(json.dumps(state, indent=2))
 
 
-def now_iso():
-    return datetime.now(timezone.utc).isoformat()
-
-
 # ---------------------------------------------------------------- merged track
 
 def fetch_merged_prs(last_pr_id):
     """Return merged PRs newer than last_pr_id (by databaseId)."""
-    rc, out, err = run([
+    rc, out, _ = run([
         "gh", "pr", "list", "--repo", REPO, "--state", "merged",
         "--limit", "50", "--json",
         "number,title,mergedAt,mergeCommit,body,labels,headRefName",
@@ -94,25 +98,17 @@ def fetch_merged_prs(last_pr_id):
     except json.JSONDecodeError:
         return []
     prs.sort(key=lambda p: p.get("mergedAt", ""))
-    new_prs = []
-    for p in prs:
-        pid = p.get("number")
-        if last_pr_id and pid <= last_pr_id:
-            continue
-        new_prs.append(p)
-    return new_prs
+    return [p for p in prs if not last_pr_id or p.get("number") > last_pr_id]
 
 
 def extract_closed_issue(body):
     """Return GH issue number closed by this PR body, or None."""
     if not body:
         return None
-    m = re.search(r"[\r\n#]closes?\s+#(\d+)", body, re.IGNORECASE)
-    if m:
-        return int(m.group(1))
-    m = re.search(r"fixes?\s+#(\d+)", body, re.IGNORECASE)
-    if m:
-        return int(m.group(1))
+    for pat in (r"[\r\n#]closes?\s+#(\d+)", r"fixes?\s+#(\d+)", r"resolves?\s+#(\d+)"):
+        m = re.search(pat, body, re.IGNORECASE)
+        if m:
+            return int(m.group(1))
     return None
 
 
@@ -136,38 +132,14 @@ def current_version(root):
 
 
 def known_version_rows(content):
-    """Return set of version labels already present in the Version History table."""
-    existing = set()
-    for m in re.finditer(r"\| \*\*\[([^\]]+)\]\*\*", content):
-        existing.add(m.group(1))
-    return existing
-
-
-def merged_version_rows(prs, root):
-    """Group merged PRs since last run into ONE row keyed by current app version.
-    Matches ROADMAP convention: | [0.83.0] | Date | feature summary | """
-    version = current_version(root) or "next"
-    if len(prs) > 3:
-        summary = f"+{len(prs)} merged PRs"
-    else:
-        summary = "; ".join(
-            re.sub(r"^(feat|fix|chore|docs|test|refactor)\([^)]*\):\s*", "", p.get("title", "")).strip()
-            for p in prs
-            if p.get("title")
-        )
-        summary = summary[:140]
-    merged_date = prs[-1].get("mergedAt", "")[:10] if prs else datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    refs = ", ".join(f"#{p['number']}" for p in prs)
-    return version, merged_date, f"{summary} ({refs})"
+    return set(m.group(1) for m in re.finditer(r"\| \*\*\[([^\]]+)\]\*\*", content))
 
 
 def read_preserve_newlines(path):
     """Read file content + detect its newline style (CRLF vs LF)."""
     data = path.read_bytes()
     newline = "\r\n" if b"\r\n" in data else "\n"
-    # decode respecting the detected newline
-    text = data.decode("utf-8-sig")
-    text = text.replace("\r\n", "\n")  # normalize
+    text = data.decode("utf-8-sig").replace("\r\n", "\n")
     return text, newline
 
 
@@ -190,7 +162,8 @@ def append_to_roadmap(rows, root):
     )
     if rows:
         newest = max(
-            (r[0] for r in rows), key=lambda v: [int(x) for x in re.findall(r"\d+", v)] or [0]
+            (r[0] for r in rows),
+            key=lambda v: [int(x) for x in re.findall(r"\d+", v)] or [0],
         )
         content = re.sub(
             r"Current version: \*\*[^*]+\*\*",
@@ -198,8 +171,6 @@ def append_to_roadmap(rows, root):
             content,
             count=1,
         )
-    # Insert after the table header separator line (|---------|------|----------|)
-    # Find the Version History table start
     m = re.search(
         r"(\| Version \| Date \| Features \|\n\|---------\|------\|----------\|\n)",
         content,
@@ -207,9 +178,7 @@ def append_to_roadmap(rows, root):
     if not m:
         return False
     insert_at = m.end()
-    new_rows = "\n".join(
-        f"| **[{v}]** | {d} | {s} |" for v, d, s in rows
-    )
+    new_rows = "\n".join(f"| **[{v}]** | {d} | {s} |" for v, d, s in rows)
     content = content[:insert_at] + new_rows + "\n" + content[insert_at:]
     write_preserve_newlines(path, content, newline)
     return True
@@ -222,7 +191,6 @@ def append_completed_initiative(pr_row, root):
     issue_num = extract_closed_issue(pr_row.get("body"))
     if not issue_num:
         return False
-    # Check it's not already there
     if f"issues/{issue_num}" in content:
         return False
     title = re.sub(
@@ -232,7 +200,6 @@ def append_completed_initiative(pr_row, root):
     if len(title) > 80:
         title = title[:77] + "..."
     month = datetime.now(timezone.utc).strftime("%b %Y")
-    # Insert after Completed Initiatives header separator
     m = re.search(
         r"(\| Initiative \| GH Issue \| Completed \| Summary \|\n\|------------\|----------\|-----------\|---------\|\n)",
         content,
@@ -245,17 +212,165 @@ def append_completed_initiative(pr_row, root):
     return True
 
 
+def update_feature_map(prs, root):
+    """Flip feature-map rows to ✅ Ready when a merged PR closes the GH issue
+    the row references (e.g. 'GH-6035' in notes). Bumps header version and
+    recomputes the Summary table."""
+    fm = root / "docs" / "PRD" / "feature-map.md"
+    if not fm.exists():
+        return []
+    content, newline = read_preserve_newlines(fm)
+
+    changed = []
+    lines = content.split("\n")
+    for i, line in enumerate(lines):
+        m = re.match(
+            r"(\| .*? \| )(✅ Ready|🟡 Partial|❌ Pending|🔵 Removed)( \|.*)$",
+            line,
+        )
+        if not m:
+            continue
+        prefix, status, suffix = m.group(1), m.group(2), m.group(3)
+        for p in prs:
+            n = extract_closed_issue(p.get("body"))
+            if n and f"GH-{n}" in line and status != "✅ Ready":
+                new_suffix = re.sub(
+                    r"\s*\|\s*$",
+                    f" — auto-ready via PR #{p['number']} |",
+                    suffix,
+                )
+                lines[i] = f"{prefix}✅ Ready{new_suffix}"
+                changed.append(f"GH-{n}")
+                break
+
+    version = current_version(root)
+    if version:
+        for i, line in enumerate(lines):
+            if line.startswith("# Liberkyma Feature Map"):
+                lines[i] = f"# Liberkyma Feature Map — v{version}"
+                break
+
+    content = "\n".join(lines)
+    content = recompute_summary(content)
+    if changed or version:
+        write_preserve_newlines(fm, content, newline)
+    return changed
+
+
+def recompute_summary(content):
+    """Recount per-area statuses and rewrite the Summary table + health line."""
+    lines = content.split("\n")
+    areas = {}
+    area_order = []
+    current_area = None
+
+    for line in lines:
+        if line.startswith("## "):
+            current_area = None
+            if line.startswith("## Summary"):
+                continue
+            if line.startswith("## Step") or "Platform Features" in line:
+                current_area = re.sub(r" \(.*\)$", "", line[3:].strip())
+                areas.setdefault(current_area, [0, 0, 0, 0])
+                if current_area not in area_order:
+                    area_order.append(current_area)
+            continue
+        if current_area and line.startswith("|"):
+            m = re.match(
+                r"\| (.*?) \| (✅ Ready|🟡 Partial|❌ Pending|🔵 Removed) \|",
+                line,
+            )
+            if m:
+                idx = STATUS_ORDER[m.group(2)]
+                areas[current_area][idx] += 1
+
+    total = [sum(areas[a][i] for a in area_order) for i in range(4)]
+    summary_rows = []
+    for area in area_order:
+        c = areas[area]
+        summary_rows.append(f"| {area} | {c[0]} | {c[1]} | {c[2]} | {c[3]} |")
+    summary_rows.append(
+        f"| **Total** | **{total[0]}** | **{total[1]}** | **{total[2]}** | **{total[3]}** |"
+    )
+    ready_pct = round(100 * total[0] / max(1, sum(total[:3])))
+    health = (
+        f"**Health: {total[0]}/{sum(total[:3])} features ready ({ready_pct}%)**"
+        f" — {total[1] + total[2]} items need work, {total[3]} removed from scope."
+    )
+
+    out = []
+    in_summary = False
+    for line in lines:
+        if line.startswith("## Summary"):
+            in_summary = True
+            out.append("## Summary")
+            out.append("")
+            out.append("| Area | Ready | Partial | Pending | Removed |")
+            out.append("|------|-------|---------|---------|---------|")
+            out.extend(summary_rows)
+            out.append("")
+            out.append(health)
+            continue
+        if in_summary:
+            continue
+        out.append(line)
+    return "\n".join(out)
+
+
+def update_gap_analysis(prs, root):
+    """Mark gap-analysis rows resolved when a merged PR closes a referenced GH
+    issue. Handles the prioritization table (P1–P9 rows referencing GH-N) by
+    appending '(auto-resolved via PR #N)' to the Notes column and updating the
+    header status line."""
+    gap_path = root / GAP_FILE
+    if not gap_path.exists():
+        return []
+    content, newline = read_preserve_newlines(gap_path)
+
+    # Map each closed GH issue -> merged PR number
+    closed = {}
+    for p in prs:
+        n = extract_closed_issue(p.get("body"))
+        if n:
+            closed[n] = p["number"]
+    if not closed:
+        return []
+
+    changed = []
+    lines = content.split("\n")
+    for i, line in enumerate(lines):
+        if not line.startswith("| P"):
+            continue
+        for n, pr_num in closed.items():
+            if f"GH-{n}" in line and "(auto-resolved" not in line:
+                lines[i] = line.rstrip() + f" — auto-resolved via PR #{pr_num} |"
+                changed.append(f"GH-{n}")
+                break
+
+    # Update the header status line (e.g. '9 of 15 ... — 4 remaining + 2 new items')
+    if changed:
+        m = re.search(r"(\*\*Status:\*\*) [^*]+(\*\*)", "\n".join(lines[:8]))
+        if m:
+            new_status = f"**Status:** updated by auto-updater — " + ", ".join(f"GH-{n} resolved" for n in closed) + "**"
+            lines[6] = new_status
+
+    if changed:
+        write_preserve_newlines(gap_path, "\n".join(lines), newline)
+    return changed
+
+
 def commit_and_push(root, message):
     # SAFETY: verify we're pushing to the right repo before touching origin.
-    # (A prior session accidentally pointed Liberkyma's origin at Liberkyma_KB
-    #  and a doc-update push would have sailed into the vault repo.)
     rc, out, _ = run(["git", "remote", "get-url", "origin"], cwd=root)
     if rc != 0 or (REPO not in out and REPO.replace("baijulabs/", "") not in out):
         return False
     rc, branch_out, _ = run(["git", "branch", "--show-current"], cwd=root)
     if rc != 0 or branch_out.strip() != "main":
         return False
-    rc, out, _ = run(["git", "add", "ROADMAP.md", "docs/PRD/"], cwd=root)
+    rc, out, _ = run(
+        ["git", "add", "ROADMAP.md", "docs/PRD/feature-map.md", GAP_FILE],
+        cwd=root,
+    )
     if rc != 0:
         return False
     rc, out, _ = run(["git", "diff", "--cached", "--quiet"], cwd=root)
@@ -279,11 +394,9 @@ def mirror_to_vault(root):
     try:
         (VAULT / "docs").mkdir(parents=True, exist_ok=True)
         (VAULT / "docs" / "PRD").mkdir(parents=True, exist_ok=True)
-        import shutil
         shutil.copy2(root / "ROADMAP.md", VAULT / "ROADMAP.md")
         for f in (root / "docs" / "PRD").glob("*.md"):
             shutil.copy2(f, VAULT / "docs" / "PRD" / f.name)
-        # Update vault index date
         idx = VAULT / "docs" / "Current_PRD_Index.md"
         if idx.exists():
             content = idx.read_text(encoding="utf-8")
@@ -344,12 +457,11 @@ def fetch_open_feature_issues():
 
 
 def fetch_unresolved_gaps(root):
-    gap_file = root / "docs" / "PRD" / "comprehensive-codebase-gap-analysis.md"
+    gap_file = root / GAP_FILE
     if not gap_file.exists():
         return []
     content = gap_file.read_text(encoding="utf-8")
-    gaps = re.findall(r"- \[ \]\s+(.+)", content)
-    return [g.strip() for g in gaps]
+    return [g.strip() for g in re.findall(r"- \[ \]\s+(.+)", content)]
 
 
 def fetch_kanban_ready():
@@ -379,8 +491,7 @@ def doc_staleness(root):
         if rc != 0 or not out:
             continue
         try:
-            from datetime import datetime as dt
-            last = dt.fromisoformat(out.strip())
+            last = datetime.fromisoformat(out.strip())
             age_days = (datetime.now(timezone.utc) - last.replace(tzinfo=timezone.utc)).days
         except Exception:
             age_days = 0
@@ -396,26 +507,44 @@ def main():
         print(json.dumps({"error": "WORKDIR missing ROADMAP.md"}))
         return
 
-    last_pr_id = state.get("last_pr_id")
-    new_prs = fetch_merged_prs(last_pr_id)
+    new_prs = fetch_merged_prs(state.get("last_pr_id"))
     notes = []
     changes_made = False
 
-    # ---- merged track: update ROADMAP.md
+    # ---- merged track: update ROADMAP.md + feature-map + gap-analysis
     if new_prs:
-        version, merged_date, feature_summary = merged_version_rows(new_prs, root)
+        version = current_version(root) or "next"
+        merged_date = new_prs[-1].get("mergedAt", "")[:10]
+        refs = ", ".join(f"#{p['number']}" for p in new_prs)
+        if len(new_prs) > 3:
+            feature_summary = f"+{len(new_prs)} merged PRs ({refs})"
+        else:
+            parts = []
+            for p in new_prs:
+                t = re.sub(r"^(feat|fix|chore|docs|test|refactor)\([^)]*\):\s*", "", p.get("title", "")).strip()
+                if t:
+                    parts.append(t)
+            feature_summary = "; ".join(parts)[:140] + f" ({refs})"
+
         content_check, _ = read_preserve_newlines(root / "ROADMAP.md")
         if version not in known_version_rows(content_check):
-            if append_to_roadmap(
-                [(version, merged_date, feature_summary)], root
-            ):
-                notes.append(f"Version History: +{version} ({len(new_prs)} merged PRs)")
+            if append_to_roadmap([(version, merged_date, feature_summary)], root):
+                notes.append(f"ROADMAP: +{version} ({len(new_prs)} merged PRs)")
                 changes_made = True
         for p in new_prs:
             if append_completed_initiative(p, root):
-                notes.append(f"Completed Initiative: #{extract_closed_issue(p.get('body'))}")
+                notes.append(f"Completed: #{extract_closed_issue(p.get('body'))}")
                 changes_made = True
-        # commit + push
+
+        fm_changed = update_feature_map(new_prs, root)
+        if fm_changed:
+            notes.append(f"Feature map ready: {', '.join(fm_changed)}")
+            changes_made = True
+        gap_changed = update_gap_analysis(new_prs, root)
+        if gap_changed:
+            notes.append(f"Gap analysis resolved: {', '.join(gap_changed)}")
+            changes_made = True
+
         if changes_made:
             today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
             if commit_and_push(root, f"docs: roadmap auto-update — {len(new_prs)} merged PRs ({today})"):
@@ -423,7 +552,6 @@ def main():
             if mirror_to_vault(root):
                 if commit_and_push_vault(f"docs: roadmap auto-update mirror ({today})"):
                     notes.append("vault mirrored")
-        # advance state
         state["last_pr_id"] = max(p["number"] for p in new_prs)
 
     # ---- upcoming track: candidate pool + freshness

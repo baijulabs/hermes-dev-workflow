@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`update-roadmap-docs` cron + script:** New daily job (9am) keeping roadmap docs current without human prompting:
   - **Merged track (mechanical):** queries merged PRs since last run, appends one Version History row keyed by the current `pyproject.toml` version, adds Completed Initiative rows for PRs that close GH issues, bumps header version/date.
   - **Upcoming track (curator-assisted):** builds a candidate pool (open `feat`/`epic`/`ux` issues, unresolved PRD gaps, ready kanban cards), flags NEW candidates, warns when roadmap docs go >14 days stale. Never invents priorities — one actionable Telegram digest only when there is something to report.
+  - **feature-map.md auto-update:** flips rows to ✅ Ready when a merged PR closes the GH issue the row references (e.g. `GH-6035` in notes), bumps header version, recomputes Summary table with counts.
+  - **gap-analysis.md auto-update:** marks prioritization rows resolved for GH-issue matches.
   - Safety: checks origin URL + branch before any push (prevents wrong-repo push), preserves CRLF line endings, pulls-rebase before vault push (Octosync-synced).
   - State file: `~/.hermes/profiles/orchestrator/state/roadmap_last_run.json`
 
