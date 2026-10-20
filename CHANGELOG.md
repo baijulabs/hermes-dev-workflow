@@ -12,6 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`build-consolidate-prs` lost-branch warnings:** Done cards with non-`[GH-N]` titles (e.g. `[PRFIX-...]`) had no way to resolve a lost branch — no GH issue to look up. The script now archives them silently: the card and its reviewer are both done, the work was consumed, the branch cleanup is expected. Warns only for cards where the work is genuinely at risk.
 - **`build-consolidate-prs` conflict-resolution card noise:** Done cards titled `Resolve merge conflicts` have no GH issue reference and their branches are ephemeral worktrees. The script fell through to `branch_lost` on every tick with no way to resolve. Fixed by skipping these titles early in `check_dedup_and_branch` — no consolidation attempt, no notification. Cards with lost branches are archived immediately.
 
+### Added
+- **`update-roadmap-docs` cron + script:** New daily job (9am) keeping roadmap docs current without human prompting:
+  - **Merged track (mechanical):** queries merged PRs since last run, appends one Version History row keyed by the current `pyproject.toml` version, adds Completed Initiative rows for PRs that close GH issues, bumps header version/date.
+  - **Upcoming track (curator-assisted):** builds a candidate pool (open `feat`/`epic`/`ux` issues, unresolved PRD gaps, ready kanban cards), flags NEW candidates, warns when roadmap docs go >14 days stale. Never invents priorities — one actionable Telegram digest only when there is something to report.
+  - Safety: checks origin URL + branch before any push (prevents wrong-repo push), preserves CRLF line endings, pulls-rebase before vault push (Octosync-synced).
+  - State file: `~/.hermes/profiles/orchestrator/state/roadmap_last_run.json`
+
 ## [2.2.0] - 2026-10-10
 
 ### Added
