@@ -25,8 +25,9 @@ Output to stdout (JSON payload) consumed by the cron deliver mechanism.
 Exit code 0 always; silent (empty stdout) when nothing to report.
 
 Environment:
-  REPO  (default baijulabs/Liberkyma)
-  WORKDIR (default ~/Liberkyma)
+  REPO  (owner/repo; if unset, parsed from the checkout's origin remote)
+  WORKDIR (repo checkout root; if unset, resolved from the kanban board default_workdir)
+  KB_VAULT (optional Obsidian vault for the docs mirror; unset = mirror disabled)
 """
 import json
 import os
@@ -36,11 +37,51 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
-REPO = os.environ.get("REPO", "baijulabs/Liberkyma")
 PROFILE_STATE = Path.home() / ".hermes" / "profiles" / "orchestrator" / "state"
 STATE_FILE = PROFILE_STATE / "roadmap_last_run.json"
-WORKDIR = Path(os.environ.get("WORKDIR", str(Path.home() / "Liberkyma")))
-VAULT = Path("/mnt/c/Users/julia/Obsidian Vaults/Liberkyma_KB")
+KANBAN_DIR = Path(os.environ.get("KANBAN_DIR", str(Path.home() / ".hermes" / "kanban" / "boards")))
+
+
+def _discover_workdir() -> Path:
+    """Repo checkout root, resolved from the kanban board's default_workdir.
+    Env override: WORKDIR (or KANBAN_REPO_DIR)."""
+    override = os.environ.get("WORKDIR") or os.environ.get("KANBAN_REPO_DIR")
+    if override:
+        return Path(override)
+    if KANBAN_DIR.is_dir():
+        for board_dir in KANBAN_DIR.iterdir():
+            board_json = board_dir / "board.json"
+            if board_json.is_file():
+                try:
+                    meta = json.loads(board_json.read_text())
+                    workdir = meta.get("default_workdir")
+                    if workdir and Path(workdir).is_dir():
+                        return Path(workdir)
+                except Exception:
+                    pass
+    return Path.cwd()
+
+
+def _discover_repo(root: Path) -> str:
+    """owner/repo from the checkout's origin remote. Env override: REPO."""
+    override = os.environ.get("REPO")
+    if override:
+        return override
+    try:
+        r = subprocess.run(["git", "remote", "get-url", "origin"],
+                           capture_output=True, text=True, timeout=10, cwd=root)
+        m = re.search(r"[:/]([^/:]+)/([^/]+?)(\.git)?$", (r.stdout or "").strip())
+        if m:
+            return f"{m.group(1)}/{m.group(2)}"
+    except Exception:
+        pass
+    return ""
+
+
+WORKDIR = _discover_workdir()
+REPO = _discover_repo(WORKDIR)
+PROJECT = REPO.split("/")[-1] if "/" in REPO else REPO
+VAULT = Path(os.environ["KB_VAULT"]) if os.environ.get("KB_VAULT") else None
 
 DOCS = [
     "ROADMAP.md",
@@ -206,7 +247,7 @@ def append_completed_initiative(pr_row, root):
     )
     if not m:
         return False
-    row = f"| {title} | [#{issue_num}](https://github.com/baijulabs/Liberkyma/issues/{issue_num}) | {month} | {pr_row.get('title','')} |"
+    row = f"| {title} | [#{issue_num}](https://github.com/{REPO}/issues/{issue_num}) | {month} | {pr_row.get('title','')} |"
     content = content[: m.end()] + row + "\n" + content[m.end():]
     write_preserve_newlines(path, content, newline)
     return True
@@ -246,8 +287,8 @@ def update_feature_map(prs, root):
     version = current_version(root)
     if version:
         for i, line in enumerate(lines):
-            if line.startswith("# Liberkyma Feature Map"):
-                lines[i] = f"# Liberkyma Feature Map — v{version}"
+            if line.startswith("# ") and line.rstrip().endswith("Feature Map"):
+                lines[i] = f"# {PROJECT} Feature Map — v{version}"
                 break
 
     content = "\n".join(lines)
@@ -362,7 +403,7 @@ def update_gap_analysis(prs, root):
 def commit_and_push(root, message):
     # SAFETY: verify we're pushing to the right repo before touching origin.
     rc, out, _ = run(["git", "remote", "get-url", "origin"], cwd=root)
-    if rc != 0 or (REPO not in out and REPO.replace("baijulabs/", "") not in out):
+    if rc != 0 or (REPO not in out and PROJECT not in out):
         return False
     rc, branch_out, _ = run(["git", "branch", "--show-current"], cwd=root)
     if rc != 0 or branch_out.strip() != "main":
@@ -388,8 +429,9 @@ def commit_and_push(root, message):
 
 
 def mirror_to_vault(root):
-    """Copy ROADMAP.md + docs/PRD to the Obsidian vault (standing instruction)."""
-    if not VAULT.exists():
+    """Copy ROADMAP.md + docs/PRD to the Obsidian vault (standing instruction).
+    Requires KB_VAULT to be set; silently skipped otherwise (env-driven)."""
+    if VAULT is None or not VAULT.exists():
         return False
     try:
         (VAULT / "docs").mkdir(parents=True, exist_ok=True)
@@ -414,9 +456,11 @@ def mirror_to_vault(root):
 
 
 def commit_and_push_vault(message):
-    # SAFETY: verify we're in the KB vault repo, not Liberkyma (belt-and-braces).
+    if VAULT is None:
+        return False
+    # SAFETY: verify we're in the KB vault repo, not the project checkout (belt-and-braces).
     rc, out, _ = run(["git", "remote", "get-url", "origin"], cwd=VAULT)
-    if rc != 0 or "Liberkyma_KB" not in out:
+    if rc != 0 or Path(VAULT).name not in out:
         return False
     rc, out, _ = run(["git", "add", "-A"], cwd=VAULT)
     if rc != 0:

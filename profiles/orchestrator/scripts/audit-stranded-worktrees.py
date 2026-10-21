@@ -22,9 +22,56 @@ import json
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "lib"))
 from report_utils import should_report
 
-REPO_DIR = "/home/julianbeggs/Liberkyma"
-REPO = "baijulabs/Liberkyma"
-KANBAN_DB = os.path.expanduser("~/.hermes/kanban/boards/liberkyma-dev/kanban.db")
+KANBAN_DIR = os.path.expanduser(os.environ.get("KANBAN_DIR", "~/.hermes/kanban/boards"))
+
+
+def _discover_repo_dir():
+    """Repo root from the kanban board's default_workdir. Env override: KANBAN_REPO_DIR."""
+    override = os.environ.get("KANBAN_REPO_DIR")
+    if override:
+        return os.path.expanduser(override)
+    for root, _dirs, files in os.walk(KANBAN_DIR):
+        if "board.json" in files:
+            try:
+                meta = json.load(open(os.path.join(root, "board.json")))
+                workdir = meta.get("default_workdir")
+                if workdir and os.path.isdir(workdir):
+                    return workdir
+            except Exception:
+                pass
+    return os.getcwd()
+
+
+def _discover_repo():
+    """owner/name from the repo's origin remote. Env override: KANBAN_REPO."""
+    override = os.environ.get("KANBAN_REPO")
+    if override:
+        return override
+    try:
+        r = subprocess.run(["git", "remote", "get-url", "origin"], capture_output=True,
+                           text=True, timeout=10, cwd=REPO_DIR)
+        m = re.search(r"[:/]([^/:]+)/([^/]+?)(\.git)?$", (r.stdout or "").strip())
+        if m:
+            return f"{m.group(1)}/{m.group(2)}"
+    except Exception:
+        pass
+    return ""
+
+
+def _discover_kanban_db():
+    """First kanban.db under the board root. Env override: KANBAN_DB."""
+    override = os.environ.get("KANBAN_DB")
+    if override:
+        return os.path.expanduser(override)
+    for root, _dirs, files in os.walk(KANBAN_DIR):
+        if "kanban.db" in files:
+            return os.path.join(root, "kanban.db")
+    return os.path.expanduser("~/.hermes/kanban/boards/kanban.db")
+
+
+REPO_DIR = _discover_repo_dir()
+REPO = _discover_repo()
+KANBAN_DB = _discover_kanban_db()
 MAX_PER_RUN = 5  # avoid hammering the API
 
 def run(cmd, cwd=REPO_DIR, timeout=60):

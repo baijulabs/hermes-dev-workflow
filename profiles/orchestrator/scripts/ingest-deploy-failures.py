@@ -11,6 +11,7 @@ remembers the last processed run ID so we only alert on new failures.
 """
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -19,10 +20,62 @@ from pathlib import Path
 
 STATE_DIR = Path.home() / ".hermes" / "profiles" / "orchestrator" / "state"
 STATE_FILE = STATE_DIR / "staging-deploy-watch.json"
-REPO = "baijulabs/Liberkyma"
-WORKFLOW_ID = "deploy.yml"
-REPO_DIR = Path.home() / "Liberkyma"
-KANBAN_DB = Path.home() / ".hermes" / "kanban" / "boards" / "liberkyma-dev" / "kanban.db"
+WORKFLOW_ID = os.environ.get("KANBAN_DEPLOY_WORKFLOW", "deploy.yml")
+KANBAN_DIR = Path(os.environ.get("KANBAN_DIR", str(Path.home() / ".hermes" / "kanban" / "boards")))
+
+
+def _discover_repo_dir() -> Path:
+    """Repo root from the kanban board's default_workdir. Env override: KANBAN_REPO_DIR."""
+    override = os.environ.get("KANBAN_REPO_DIR")
+    if override:
+        return Path(override)
+    if KANBAN_DIR.is_dir():
+        for board_dir in KANBAN_DIR.iterdir():
+            board_json = board_dir / "board.json"
+            if board_json.is_file():
+                try:
+                    meta = json.loads(board_json.read_text())
+                    workdir = meta.get("default_workdir")
+                    if workdir and Path(workdir).is_dir():
+                        return Path(workdir)
+                except Exception:
+                    pass
+    return Path.cwd()
+
+
+def _discover_repo() -> str:
+    """owner/name from the repo's origin remote. Env override: KANBAN_REPO."""
+    override = os.environ.get("KANBAN_REPO")
+    if override:
+        return override
+    try:
+        result = subprocess.run(["git", "remote", "get-url", "origin"],
+                                capture_output=True, text=True, timeout=10,
+                                cwd=REPO_DIR)
+        m = re.search(r"[:/]([^/:]+)/([^/]+?)(\.git)?$", (result.stdout or "").strip())
+        if m:
+            return f"{m.group(1)}/{m.group(2)}"
+    except Exception:
+        pass
+    return ""
+
+
+def _discover_kanban_db() -> Path:
+    """First kanban.db under the board root. Env override: KANBAN_DB."""
+    override = os.environ.get("KANBAN_DB")
+    if override:
+        return Path(override)
+    if KANBAN_DIR.is_dir():
+        for board_dir in KANBAN_DIR.iterdir():
+            db = board_dir / "kanban.db"
+            if db.is_file():
+                return db
+    return Path.home() / ".hermes" / "kanban" / "kanban.db"
+
+
+REPO_DIR = _discover_repo_dir()
+REPO = _discover_repo()
+KANBAN_DB = _discover_kanban_db()
 
 def ensure_state():
     STATE_DIR.mkdir(parents=True, exist_ok=True)
@@ -273,7 +326,7 @@ def create_test_failure_issue(run, test_failures):
                 "--body", body,
                 "--label", "ready-for-agent,test-failure")
     if result:
-        # Extract issue number from output like "https://github.com/baijulabs/Liberkyma/issues/123"
+        # Extract issue number from output like "https://github.com/<owner>/<repo>/issues/123"
         try:
             return int(result.rsplit("/", 1)[-1])
         except (ValueError, IndexError):

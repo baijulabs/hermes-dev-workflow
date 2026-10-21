@@ -420,6 +420,20 @@ To prevent coders from committing to wrong branches:
 | `HERMES_PROJECT_DIR` | all | Project repository path |
 | `HERMES_PROJECT_REPO` | all | GitHub repo in `owner/repo` format |
 | `HERMES_KANBAN_BOARD` | orchestrator | Kanban board name |
+
+**Script self-configuration (portable scripts in `profiles/orchestrator/scripts/`):** the
+orchestrator scripts contain **no hardcoded project constants**. They resolve at runtime:
+
+- **Repo path** — from the kanban board's `default_workdir` (`boards/<slug>/board.json`),
+  override with `KANBAN_REPO_DIR`/`WORKDIR`.
+- **GitHub `owner/repo`** — parsed from `git remote get-url origin` in the repo path,
+  override with `KANBAN_REPO`/`REPO`.
+- **Kanban DB** — first `kanban.db` under `KANBAN_DIR` (~/.hermes/kanban/boards),
+  override with `KANBAN_DB`.
+- **Obsidian vault mirror** (`update-roadmap-docs`) — optional, `KB_VAULT`;
+  unset disables the vault mirror.
+
+These env vars exist so the same public scripts deploy onto any project without edits.
 | `HERMES_STAGING_URL` | qa | Staging deployment URL |
 | `GITHUB_TOKEN` | orchestrator, qa | GitHub API access (gh CLI) |
 | `NEON_DATABASE_URL` | qa | Staging database connection for DB-layer verification |
