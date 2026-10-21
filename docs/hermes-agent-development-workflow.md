@@ -201,6 +201,7 @@ Phase 8: sync-       GH milestone comments
 | `audit-archive-cancelled` | every 15m | no_agent | telegram | Archives cancelled or timed-out kanban cards. |
 | `audit-prune-worktrees` | every 48h | no_agent | telegram | Deletes stale .worktrees/ > 7 days old. |
 | `audit-kanban-health` | every 3h | no_agent | telegram | Kanban DB SQLite integrity checks. |
+| `audit-archived-unmerged` | every 15m | no_agent | telegram | Sweeps archived coder cards for branches whose content never reached main and has no merged PR — reopens the linked closed issue (the premature-epic-close stranding guard). Issue-level merged-PR check arbitrates squash-merged consolidation PRs; once-per-card alert state. |
 
 ### Phase 6: Verify
 
@@ -292,6 +293,8 @@ build-consolidate-prs.py picks up the pair
 
 ### Zero-Commits Auto-Archive
 Before creating a PR, `build-consolidate-prs` runs `git rev-list --count origin/main..branch`. If the count is 0 (all content already on main via other paths), it archives the coder+reviewer cards and skips PR creation. This prevents "No commits between main and branch" errors.
+
+**Premature-epic-close guard:** `build-consolidate-prs` also treats a CLOSED issue as "blocked", and used to archive the group's cards in that state without creating a PR. If an epic is closed before its later phases merge, completed phase work would be archived unmerged and never surface. The closed-issue path now verifies branch content is on `main` (merged-PR or ancestry check) before archiving; otherwise it keeps the cards and auto-reopens the issue with an evidence comment. `audit-archived-unmerged` (Phase 5) is the detection sweep for anything that slips through.
 
 ### Notification Filter — Actionable Items Only
 

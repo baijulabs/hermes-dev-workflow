@@ -282,4 +282,18 @@
       "workdir": "${HERMES_PROJECT_DIR:-/home/user/project}"
     }
   ]
-}
+},
+    {
+      "id": "job-audit-archived-unmerged",
+      "name": "audit-archived-unmerged",
+      "prompt": "",
+      "skills": [],
+      "script": "audit-archived-unmerged.py",
+      "no_agent": true,
+      "schedule": {"kind": "interval", "minutes": 15, "display": "every 15m"},
+      "schedule_display": "every 15m",
+      "repeat": {"times": null, "completed": 0},
+      "enabled": true,
+      "deliver": "telegram:<chat_id>:<thread_id>",
+      "workdir": "${HERMES_PROJECT_DIR:-/home/user/project}"
+    }

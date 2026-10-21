@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **`build-consolidate-prs` premature-close stranding (critical):** `is_blocked()` treated a CLOSED GitHub issue as "work resolved" and archived the group's completed coder+reviewer cards **without creating a PR**. A multi-phase epic closed at phase 1 therefore buried every later phase's completed, review-approved work indefinitely (production incident: an epic closed on phase-1 merge day; a finished phase-2 branch sat stranded for 5 days). The closed-issue path now verifies each branch's content actually reached `main` (merged-PR check or ancestry) before archiving; unmerged cards are kept and the issue is auto-reopened with an evidence comment so the next tick consolidates normally.
+- **`build-consolidate-prs` hardcoded board path:** one archive path updated the kanban DB via a hardcoded `<board>/kanban.db` sqlite3 call — cards on other boards were missed. Replaced with the shared parameterized `archive_coder_card()`.
+- **`build-consolidate-prs` + `audit-archived-unmerged` hardcoded project constants:** repo path / GitHub repo / board slug were hardcoded, leaking project identity into the public repo and breaking reuse. Both scripts now self-configure: repo root from the kanban board's `default_workdir` (`board.json`), GitHub `owner/name` parsed from `git remote get-url origin`, with `KANBAN_REPO_DIR` / `KANBAN_REPO` / `KANBAN_DIR` env overrides. Deployed behavior is unchanged when the board has `default_workdir` set (required by the worktree workflow anyway).
+
+### Added
+- **`audit-archived-unmerged` cron + script (every 15m, no_agent):** the detection counterpart to the stranding fix. Sweeps archived coder cards (30-day window) for worktree branches whose content never reached `main` and have no merged PR, then reopens the linked closed issue with an evidence comment and reports via Telegram. Scale-safe by design: one `ls-remote` for all branch tips, fast tip-in-main-history skip, budgeted `git cherry` content checks (squash-merge proof), issue-level merged-PR arbiter (consolidation PRs squash-merge coder branches, so per-branch patch-ids never match), and a once-per-card alert state file so superseded iterations don't re-alert every tick. Reopens only CLOSED issues — findings on open issues are informational only.
+
+### Fixed
 - **`ingest-gh-issues` creates worktree coder+reviewer pairs, not scratch triage cards:** Previously every `ready-for-agent` issue became a scratch card assigned to `orchestrator`, requiring manual re-dispatch into a coder/reviewer pair with worktrees. The script now creates the coder card directly with `--workspace worktree --assignee coder` and a paired reviewer card (`--assignee code-reviewer --parent <coder_id>`) so workers immediately get real branches.
 - **`build-consolidate-prs` lost-branch warnings:** Done cards with non-`[GH-N]` titles (e.g. `[PRFIX-...]`) had no way to resolve a lost branch — no GH issue to look up. The script now archives them silently: the card and its reviewer are both done, the work was consumed, the branch cleanup is expected. Warns only for cards where the work is genuinely at risk.
 - **`build-consolidate-prs` conflict-resolution card noise:** Done cards titled `Resolve merge conflicts` have no GH issue reference and their branches are ephemeral worktrees. The script fell through to `branch_lost` on every tick with no way to resolve. Fixed by skipping these titles early in `check_dedup_and_branch` — no consolidation attempt, no notification. Cards with lost branches are archived immediately.
@@ -112,7 +120,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Genericized hardcoded project references.** Board name, project directory, repo slug, and QA agent identity are now templated via environment variables (`HERMES_KANBAN_BOARD`, `HERMES_PROJECT_DIR`, `HERMES_PROJECT_REPO`), so the repo bootstraps onto any project.
-- Removed all references to the `liberkyma-operations` skill (not shipped in the portable repo); docs now reference `project-operations`.
+- Removed all references to the internal project-specific skill (not shipped in the portable repo); docs now reference `project-operations`.
 
 ### Fixed
 - Hardcoded board name in the orchestrator `SOUL.md` templated for portability.

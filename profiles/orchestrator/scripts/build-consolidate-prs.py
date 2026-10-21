@@ -21,13 +21,53 @@ from collections import defaultdict
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "lib"))
 from report_utils import should_report
 
-KANBAN_DIR = os.path.expanduser("~/.hermes/kanban/boards")
-REPO_DIR = "/home/julianbeggs/Liberkyma"
-REPO = "baijulabs/Liberkyma"
+KANBAN_DIR = os.path.expanduser(os.environ.get("KANBAN_DIR", "~/.hermes/kanban/boards"))
 MAX_CONSOLIDATE_PER_RUN = 2  # base limit — scales up when backlog is deep
 MAX_INDIVIDUAL_PER_RUN = 3
 RETRY_LIMIT = 3  # max consolidation attempts before skipping for 24h
-STATE_DIR = os.path.expanduser("~/.hermes/profiles/orchestrator/state")
+STATE_DIR = os.path.expanduser(os.environ.get(
+    "KANBAN_STATE_DIR", "~/.hermes/profiles/orchestrator/state"))
+
+
+def _discover_repo_dir():
+    """Repo root from the kanban board's default_workdir (no project-specific
+    constants). Env override: KANBAN_REPO_DIR."""
+    override = os.environ.get("KANBAN_REPO_DIR")
+    if override:
+        return os.path.expanduser(override)
+    for root, _dirs, files in os.walk(KANBAN_DIR):
+        if "board.json" in files:
+            try:
+                meta = json.load(open(os.path.join(root, "board.json")))
+                workdir = meta.get("default_workdir")
+                if workdir and os.path.isdir(workdir):
+                    return workdir
+            except Exception:
+                pass
+    return os.getcwd()
+
+
+def _discover_repo():
+    """owner/name from the repo's origin remote. Env override: KANBAN_REPO."""
+    override = os.environ.get("KANBAN_REPO")
+    if override:
+        return override
+    try:
+        r = subprocess.run(["git", "remote", "get-url", "origin"],
+                           capture_output=True, text=True, timeout=10,
+                           cwd=_REPO_DIR)
+        url = (r.stdout or "").strip()
+        m = re.search(r"[:/]([^/:]+)/([^/]+?)(\.git)?$", url)
+        if m:
+            return f"{m.group(1)}/{m.group(2)}"
+    except Exception:
+        pass
+    return ""
+
+
+_REPO_DIR = _discover_repo_dir()
+REPO_DIR = _REPO_DIR
+REPO = _discover_repo()
 
 def load_retry_state():
     path = os.path.join(STATE_DIR, "consolidate-retries.json")
@@ -43,7 +83,12 @@ def save_retry_state(state):
     json.dump(state, open(os.path.join(STATE_DIR, "consolidate-retries.json"), "w"))
 
 def is_blocked(gh_num):
-    """Check if a GH issue has exceeded retry limit within 24h."""
+    """Check if a GH issue has exceeded retry limit within 24h, or is already closed."""
+    # If the issue is already closed on GitHub, no point retrying
+    rc, out, _ = run(["gh", "issue", "view", str(gh_num), "--repo", REPO,
+                      "--json", "state", "--jq", ".state"], timeout=15)
+    if rc == 0 and out.strip() == "CLOSED":
+        return True  # blocked — issue already resolved
     state = load_retry_state()
     key = str(gh_num)
     if key not in state:
@@ -136,6 +181,30 @@ def get_branch_commit_count(branch):
         return int(out.strip())
     return -1
 
+
+def pr_for_branch_is_merged(branch):
+    """Check if a PR was already created from this branch and merged."""
+    rc, out, _ = run(["gh", "pr", "list", "--state", "merged", "--head", branch,
+                      "--json", "number,state", "--jq", "length"], timeout=15)
+    if rc == 0 and out.strip().isdigit() and int(out.strip()) > 0:
+        return True
+    return False
+
+
+def archive_coder_card(coder_id):
+    """Archive a coder card in the kanban DB so it won't be reprocessed."""
+    board_paths = [os.path.join(KANBAN_DIR, d, "kanban.db")
+                   for d in os.listdir(KANBAN_DIR)
+                   if os.path.isdir(os.path.join(KANBAN_DIR, d))]
+    for db_path in board_paths:
+        try:
+            conn = sqlite3.connect(db_path)
+            conn.execute("UPDATE tasks SET status='archived' WHERE id=?", (coder_id,))
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
+
 def recover_from_worktree(branch):
     """Fallback: if a branch ref is lost locally but the worktree still exists
     on disk, try to recover the latest commit and recreate the branch ref.
@@ -164,7 +233,7 @@ def group_cards_by_issue(db_path, cutoff):
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
 
-    # Get ALL done coder cards with their reviewer siblings
+    # Get ALL done coder cards with their reviewer siblings — including no-branch
     cursor.execute("""
         SELECT c.id as coder_id, c.title, c.branch_name
         FROM tasks c
@@ -172,8 +241,6 @@ def group_cards_by_issue(db_path, cutoff):
         JOIN tasks r ON r.id = l.child_id AND r.assignee = 'code-reviewer'
         WHERE c.status IN ('done', 'archived')
           AND c.assignee = 'coder'
-          AND c.branch_name IS NOT NULL
-          AND c.branch_name != ''
           AND r.status IN ('done', 'archived')
           AND c.completed_at > ?
         ORDER BY c.completed_at DESC
@@ -208,13 +275,34 @@ def group_cards_by_issue(db_path, cutoff):
 
     return to_consolidate, to_individual
 
-def check_dedup_and_branch(entry, seen_commit_sets, skip_lost=False):
+def check_dedup_and_branch(entry, seen_commit_sets, skip_lost=False, skip_counters=None):
     """Common pre-flight checks for a coder entry. Returns True if OK to process."""
+    if skip_counters is None:
+        skip_counters = {}
     branch = entry["branch"]
     title = entry.get("title", "") or ""
 
     # Skip conflict-resolution cards — they're ephemeral worktrees, never PR'd
     if title.startswith("Resolve merge conflicts") or title.startswith("Review: Resolve merge conflicts"):
+        skip_counters["conflict_resolution"] = skip_counters.get("conflict_resolution", 0) + 1
+        # Archive done cards so they don't get re-queried every tick
+        if not branch or (branch and get_branch_commit_count(branch) == -1):
+            archive_coder_card(entry["coder_id"])
+        return False, None
+
+    # Handle cards with no branch_name (created with workspace_kind=scratch)
+    if not branch:
+        gh_nums = re.findall(r'\[GH-(\d+)\]', entry.get("title", "") or "")
+        if gh_nums:
+            # Check if the GH issue already has a merged PR
+            rc, out, _ = run(["gh", "issue", "view", gh_nums[0], "--repo", REPO,
+                              "--json", "state,closedAt", "--jq", ".state"],
+                             timeout=15)
+            if rc == 0 and out.strip() == "CLOSED":
+                skip_counters["no_branch_gh_closed"] = skip_counters.get("no_branch_gh_closed", 0) + 1
+                archive_coder_card(entry["coder_id"])
+                return False, None
+        skip_counters["no_branch_card"] = skip_counters.get("no_branch_card", 0) + 1
         return False, None
 
     count = get_branch_commit_count(branch)
@@ -222,35 +310,63 @@ def check_dedup_and_branch(entry, seen_commit_sets, skip_lost=False):
         if not skip_lost:
             # Attempt recovery from worktree on disk before giving up
             if recover_from_worktree(branch):
+                skip_counters["recovery_succeeded"] = skip_counters.get("recovery_succeeded", 0) + 1
                 # Re-check after recovery
                 count = get_branch_commit_count(branch)
             else:
-                # Branch lost — card is done, work was consumed. Archive silently.
+                # Branch is gone. Check if it was already merged via PR.
+                if pr_for_branch_is_merged(branch):
+                    skip_counters["already_merged"] = skip_counters.get("already_merged", 0) + 1
+                    archive_coder_card(entry["coder_id"])
+                    return False, None
+                # Check if the GH issue is already closed — if so, branch loss is expected
+                gh_nums = re.findall(r'\[GH-(\d+)\]', entry.get("title", "") or "")
+                if gh_nums:
+                    rc, state_out, _ = run(["gh", "issue", "view", gh_nums[0], "--repo", REPO,
+                                            "--json", "state", "--jq", ".state"], timeout=15)
+                    if rc == 0 and state_out.strip() in ("CLOSED", "MERGED"):
+                        skip_counters["no_branch_gh_closed"] = skip_counters.get("no_branch_gh_closed", 0) + 1
+                        archive_coder_card(entry["coder_id"])
+                        return False, None
+                # No GH issue ref — card is done and reviewer done, branch was cleaned
+                # up intentionally. Archive silently — no code lost.
+                archive_coder_card(entry["coder_id"])
+                skip_counters["branch_consumed_no_ref"] = skip_counters.get("branch_consumed_no_ref", 0) + 1
+                return False, None
+                skip_counters["branch_lost"] = skip_counters.get("branch_lost", 0) + 1
+                print(f"  ⚠️  Branch {branch} lost — skipping")
                 return False, None
     if count == 0:
+        skip_counters["branch_empty"] = skip_counters.get("branch_empty", 0) + 1
         return False, None
 
     hashes = get_commit_hashes(branch)
     if not hashes:
+        skip_counters["branch_empty"] = skip_counters.get("branch_empty", 0) + 1
         return False, None
 
     dedup_key = "|".join(sorted(hashes))
     if dedup_key in seen_commit_sets:
+        skip_counters["dedup_already_pr"] = skip_counters.get("dedup_already_pr", 0) + 1
         return False, None
 
     if is_already_in_main(hashes, branch):
         seen_commit_sets.add(dedup_key)
+        skip_counters["already_on_main"] = skip_counters.get("already_on_main", 0) + 1
         return False, None
 
     if already_has_pr(branch):
         seen_commit_sets.add(dedup_key)
+        skip_counters["pr_already_exists"] = skip_counters.get("pr_already_exists", 0) + 1
         return False, None
 
     return True, hashes
 
-def create_individual_pr(entry, seen_commit_sets):
+def create_individual_pr(entry, seen_commit_sets, skip_counters=None):
     """Create a single PR for a coder branch (existing behavior)."""
-    ok, hashes = check_dedup_and_branch(entry, seen_commit_sets)
+    if skip_counters is None:
+        skip_counters = {}
+    ok, hashes = check_dedup_and_branch(entry, seen_commit_sets, skip_counters=skip_counters)
     if not ok:
         return 0
 
@@ -303,14 +419,16 @@ def create_individual_pr(entry, seen_commit_sets):
             print(f"  📝 Posted PR comment on GH-{issue_num}")
     return 1
 
-def create_consolidated_pr(gh_num, entries, seen_commit_sets):
+def create_consolidated_pr(gh_num, entries, seen_commit_sets, skip_counters=None):
     """Merge multiple coder branches into ONE consolidation PR for a GH issue."""
+    if skip_counters is None:
+        skip_counters = {}
     # Pre-flight: check each branch, collect valid ones
     valid_entries = []
     all_hashes = []
     all_branches = []
     for entry in entries:
-        ok, hashes = check_dedup_and_branch(entry, seen_commit_sets, skip_lost=True)
+        ok, hashes = check_dedup_and_branch(entry, seen_commit_sets, skip_lost=True, skip_counters=skip_counters)
         if ok:
             valid_entries.append(entry)
             all_hashes.extend(hashes)
@@ -389,8 +507,7 @@ def create_consolidated_pr(gh_num, entries, seen_commit_sets):
         print(f"  ⏭️  No commits vs main — content already landed. Archiving cards.")
         # Archive the coder cards so consolidation watch doesn't reprocess them
         for entry in valid_entries:
-            run(["sqlite3", KANBAN_DIR + "/liberkyma-dev/kanban.db",
-                 f"UPDATE tasks SET status='archived' WHERE id='{entry['coder_id']}';"])
+            archive_coder_card(entry["coder_id"])
         run(["git", "checkout", "origin/main"])
         run(["git", "branch", "-D", branch_name])
         return 0
@@ -449,6 +566,19 @@ def create_consolidated_pr(gh_num, entries, seen_commit_sets):
 def main():
     created = 0
     seen_commit_sets = set()
+    # Skip counters — tracks every reason we don't process a card
+    skip_counters = {
+        "branch_lost": 0,
+        "branch_empty": 0,
+        "dedup_already_pr": 0,
+        "already_on_main": 0,
+        "pr_already_exists": 0,
+        "recovery_succeeded": 0,
+        "already_merged": 0,
+        "no_branch_card": 0,
+        "no_branch_gh_closed": 0,
+        "conflict_resolution": 0,
+    }
 
     run(["git", "fetch", "--depth=100", "origin", "main"], timeout=30)
     # Also fetch any worktree branches that may have been pushed — the
@@ -483,11 +613,49 @@ def main():
             consolidated = 0
             for gh_num, entries in to_consolidate_sorted:
                 if is_blocked(gh_num):
-                    print(f"  ⏭️  GH-{gh_num} skipped (failed {RETRY_LIMIT}+ attempts, 24h cooldown)")
+                    # Check once more: if the issue is actually closed, archive all cards
+                    # — BUT ONLY if their branch content is verified on main. A closed
+                    # issue does not imply merged work (multi-phase epics can be closed
+                    # prematurely, e.g. GH-5974 Phase 2 was archived unmerged here).
+                    rc, state_out, _ = run(["gh", "issue", "view", str(gh_num), "--repo", REPO,
+                                            "--json", "state", "--jq", ".state"], timeout=15)
+                    if rc == 0 and state_out.strip() in ("CLOSED", "MERGED"):
+                        unmerged = []
+                        for entry in entries:
+                            branch = entry.get("branch") or ""
+                            hashes = get_commit_hashes(branch) if branch else []
+                            content_merged = False
+                            if hashes:
+                                content_merged = pr_for_branch_is_merged(branch) or \
+                                                 is_already_in_main(hashes, branch)
+                            if content_merged:
+                                archive_coder_card(entry["coder_id"])
+                            else:
+                                unmerged.append(entry)
+                        if unmerged:
+                            # Do NOT archive unmerged work. Reopen the issue so the
+                            # next tick exits is_blocked and consolidates normally.
+                            skip_counters["premature_close_unmerged"] = \
+                                skip_counters.get("premature_close_unmerged", 0) + len(unmerged)
+                            run(["gh", "issue", "reopen", str(gh_num), "--repo", REPO], timeout=15)
+                            branch_list = ", ".join(e.get("branch") or "(no branch)" for e in unmerged)
+                            reopen_note = (f"Auto-reopened by build-consolidate-prs: {len(unmerged)} "
+                                           f"completed coder card(s) for this issue have branch "
+                                           f"content NOT on main ({branch_list}). The issue was "
+                                           f"closed while work was still in flight — consolidation "
+                                           f"resumes on the next tick.")
+                            run(["gh", "issue", "comment", str(gh_num), "--repo", REPO,
+                                 "--body", reopen_note], timeout=15)
+                            for e in unmerged:
+                                print(f"  ⚠️  Kept {e['coder_id']} unmerged ({e.get('branch')}) "
+                                      f"— issue GH-{gh_num} reopened")
+                        else:
+                            skip_counters["no_branch_gh_closed"] = \
+                                skip_counters.get("no_branch_gh_closed", 0) + len(entries)
                     continue
                 if consolidated >= max_consolidate:
                     break
-                created += create_consolidated_pr(gh_num, entries, seen_commit_sets)
+                created += create_consolidated_pr(gh_num, entries, seen_commit_sets, skip_counters)
                 consolidated += 1
 
             # Process individual cards (newest-first)
@@ -497,7 +665,7 @@ def main():
             for entry in to_individual_sorted:
                 if individual >= MAX_INDIVIDUAL_PER_RUN:
                     break
-                created += create_individual_pr(entry, seen_commit_sets)
+                created += create_individual_pr(entry, seen_commit_sets, skip_counters)
                 individual += 1
 
         except Exception as e:
@@ -505,10 +673,21 @@ def main():
             traceback.print_exc()
             print(f"Error processing {db_path}: {e}")
 
-    if created > 0:
-        print(f"\nCreated {created} new PR(s).")
-    elif not should_report("build-consolidate-prs", f"{created}"):
-        # Suppress duplicate "nothing to do" reports
+    # Only notify about actionable items — skip resolved/archived/dead categories
+    action_skip_reasons = ["branch_lost", "no_branch_card"]
+    actionable_skipped = sum(skip_counters.get(r, 0) for r in action_skip_reasons)
+    if created > 0 or actionable_skipped > 0:
+        parts = [f"Created {created} PR(s)"]
+        if actionable_skipped > 0:
+            parts.append(f"Skipped {actionable_skipped} pair(s)")
+            for reason in action_skip_reasons:
+                count = skip_counters.get(reason, 0)
+                if count > 0:
+                    label = reason.replace("_", " ")
+                    parts.append(f"  • {label}: {count}")
+        print("; ".join(parts))
+    elif not should_report("build-consolidate-prs", f"{created},{actionable_skipped}"):
+        # Suppress duplicate "nothing to do, nothing skipped" reports
         import os, sys
         os._exit(0)
 
