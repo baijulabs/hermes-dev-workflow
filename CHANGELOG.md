@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **`build-consolidate-prs` reopen churn (same squash false-positive as the audit script):** the new premature-close guard used ancestry checks only — squash-merged consolidation PRs leave member branch tips out of main history, so the guard reopened issues whose content had already shipped (GH-6049/6043/6039/6035), which re-triggered ingest into duplicate coder runs and a duplicate consolidation PR (#6058, near-no-op). The closed-issue path now also consults an issue-level merged-PR arbiter (any merged PR referencing the issue ⇒ content shipped). Deployed to the live cron the same day; the four issues were re-closed and 9 churned kanban cards cancelled.
+- **`setup.sh` fallback delivery target** when `--telegram-target` is omitted is now `local` (a bare `telegram` target fails with "platform not configured" — the same lesson `ingest-deploy-failures` learned earlier).
 - **`setup.sh` was broken from zero — found and fixed by sandboxed install simulation.** Running setup.sh against a fresh `HERMES_HOME` surfaced 9 defects, all fixed and re-verified with a clean end-to-end pass:
   1. Crashed at the first profile under `set -u` (sed referenced unset `HERMES_PROJECT_REPO`); placeholder matching now matches `${VAR:-default}` text instead of expanding the variable.
   2. Skills install failed (`cp: cannot create directory`) — category subdirectories were never created.

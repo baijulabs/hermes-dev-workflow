@@ -121,7 +121,7 @@ copy_profile() {
             -e "s|\${HERMES_PROJECT_DIR:-[^}]*}|$PROJECT_DIR|g" \
             -e "s|\${HERMES_KANBAN_BOARD:-[^}]*}|$BOARD_SLUG|g" \
             -e "s|\${HERMES_STAGING_URL:-[^}]*}|${STAGING_URL:-staging.example.com}|g" \
-            -e "s|telegram:<chat_id>:<thread_id>|${TELEGRAM_TARGET:-telegram}|g" \
+            -e "s|telegram:<chat_id>:<thread_id>|${TELEGRAM_TARGET:-local}|g" \
             "$src/cron/jobs.json.template" \
             | sed '/^[[:space:]]*#/d' > "$dst/cron/jobs.json"
     fi

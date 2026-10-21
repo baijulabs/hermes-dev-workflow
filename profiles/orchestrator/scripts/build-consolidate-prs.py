@@ -621,6 +621,20 @@ def main():
                                             "--json", "state", "--jq", ".state"], timeout=15)
                     if rc == 0 and state_out.strip() in ("CLOSED", "MERGED"):
                         unmerged = []
+                        # Arbiter (same as audit-archived-unmerged): a MERGED PR
+                        # referencing the issue means the content was carried to
+                        # main by a consolidation PR — squash merges leave member
+                        # branch tips out of main history, so ancestry checks
+                        # alone false-flag shipped work (GH-6049/6035 churn).
+                        issue_has_merged_pr = False
+                        if rc == 0:
+                            _rc, _out, _ = run(["gh", "pr", "list", "--repo", REPO,
+                                                "--state", "merged",
+                                                "--search", f"GH-{gh_num} in:title,body",
+                                                "--json", "number",
+                                                "--jq", "length"], timeout=20)
+                            issue_has_merged_pr = (_rc == 0 and _out.isdigit()
+                                                   and int(_out) > 0)
                         for entry in entries:
                             branch = entry.get("branch") or ""
                             hashes = get_commit_hashes(branch) if branch else []
@@ -628,7 +642,7 @@ def main():
                             if hashes:
                                 content_merged = pr_for_branch_is_merged(branch) or \
                                                  is_already_in_main(hashes, branch)
-                            if content_merged:
+                            if content_merged or issue_has_merged_pr:
                                 archive_coder_card(entry["coder_id"])
                             else:
                                 unmerged.append(entry)
