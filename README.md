@@ -2,15 +2,107 @@
 
 A portable, automated development pipeline powered by Hermes Agent multi-profile kanban. Bootstraps issue ingestion, parallel coder+reviewer implementation, PR consolidation, merge, and QA verification onto any project.
 
-## Quick Start
+## From-Zero Install
+
+Verified procedure (setup.sh is exercised end-to-end in a sandbox before every release; see CHANGELOG).
+
+### Prerequisites
+
+**Tools** (setup.sh aborts if missing): `git`, `gh`, `hermes` (Hermes Agent CLI), `sqlite3`, `python3`, `jq`.
+
+**Accounts & auth (manual, before setup):**
+
+- **GitHub CLI authenticated:** `gh auth login` — setup does not configure gh auth; every cron script calls `gh`.
+- **Push access** to the target repo from this machine.
+- **An LLM provider key** (e.g. OpenRouter) for coder/reviewer/qa workers and the orchestrator.
+- **A Telegram bot token + chat/thread id** if you want pipeline notifications delivered (cron `deliver` targets); otherwise deliveries fall back to `local`.
+
+**Target project requirements:**
+
+- A **git checkout with an `origin` remote** pointing at the GitHub repo setup.sh is pointed at (setup aborts otherwise — scripts resolve `owner/repo` from that remote).
+- Default branch `main`.
+- The `ready-for-agent` label (create it: `gh label create ready-for-agent --repo owner/project`).
+- Optional, for the merge/deploy stages: a `deploy.yml` triggered by PR merge and a `scripts/sync-version.sh` for version bumps. Without them, ingest/build stages still work; merge/deploy stages no-op.
+
+### Install
 
 ```bash
 git clone https://github.com/baijulabs/hermes-dev-workflow.git
 cd hermes-dev-workflow
-./setup.sh --repo "owner/project" --dir "/path/to/project"
+./setup.sh \
+  --repo "owner/project" \
+  --dir "/path/to/project-checkout" \
+  --board "project-dev" \
+  --staging-url "https://staging.project.com" \
+  --telegram-target "telegram:<chat_id>:<thread_id>"
 ```
 
-Edit secrets, start the gateway, and label an issue `ready-for-agent`. The pipeline picks it up within minutes.
+All flags except `--repo`/`--dir` are optional. setup.sh then:
+
+1. Registers the four Hermes profiles (`orchestrator`, `qa`, `coder`, `code-reviewer`) — a directory under `~/.hermes/profiles/` alone is **not** a profile; registration is what makes the dispatcher able to route work.
+2. Deploys `SOUL.md`, scripts, and a generated `config.yaml` per profile (model/provider defaults to `deepseek/deepseek-v4-flash` on OpenRouter — **edit each `config.yaml`** to your provider/model).
+3. Installs the orchestrator skills.
+4. Writes `.env` templates (secrets are **never** auto-filled).
+5. Creates the kanban board and sets its `default_workdir` to your checkout — this is what every portable script self-configures from.
+6. Templates `cron/jobs.json` from the template (repo, dir, board, staging URL, telegram target substituted; template comments stripped so the file is valid JSON).
+
+### Post-install checklist
+
+```bash
+# 1. Secrets (GitHub token, LLM provider key, Telegram token, optional staging DB):
+vim ~/.hermes/profiles/orchestrator/.env        # + copy into coder/code-reviewer/qa .env if separate
+
+# 2. Model per profile (all four config.yaml files):
+for p in orchestrator coder code-reviewer qa; do
+  ${EDITOR:-vi} ~/.hermes/profiles/$p/config.yaml
+done
+
+# 3. Verify the board is wired:
+hermes kanban boards list
+hermes -p orchestrator cron list                # should list ~20 jobs
+
+# 4. Start the gateway (single shared gateway serves all profiles):
+hermes gateway start
+
+# 5. Smoke test the pipeline end to end:
+gh issue create --repo owner/project --title "Test: pipeline smoke" \
+  --body "Ping" --label ready-for-agent
+# expect: ingest-gh-issues creates coder+reviewer cards within 5m (see cron output / kanban board)
+```
+
+**Non-default data roots:** if you run Hermes with a custom `HERMES_HOME` (not `~/.hermes`), set `KANBAN_DIR` to `$HERMES_HOME/kanban/boards` in the cron environment — the scripts' default path assumes the standard layout.
+
+### Environment Variables
+
+**Setup flags → written into profile config at install time** (not needed at runtime):
+
+| Flag | Purpose |
+|------|---------|
+| `--repo owner/project` | GitHub repo; also the source for `owner/repo` self-configuration |
+| `--dir /path/to/checkout` | Project checkout; becomes the board's `default_workdir` and each profile's `terminal.cwd` |
+| `--board slug` | Kanban board slug (default `<project-dir-basename>-dev`) |
+| `--staging-url URL` | QA staging target (`HERMES_STAGING_URL` in cron jobs) |
+| `--telegram-target t` | Cron delivery target, e.g. `telegram:<chat_id>:<thread_id>` (default `local`) |
+
+**`.env` secrets** (per profile; setup writes empty templates):
+
+| Variable | Profiles | Purpose |
+|----------|----------|---------|
+| `GITHUB_TOKEN` | orchestrator, qa | GitHub API access (gh CLI) |
+| `OPENROUTER_API_KEY` | all | LLM access for workers — **workers inherit the gateway's env; without it every dispatch fails 403** |
+| `TELEGRAM_BOT_TOKEN` | orchestrator, qa | Telegram delivery for cron notifications |
+| `NEON_DATABASE_URL` | qa | Staging database connection for QA DB-layer verification |
+
+**Script self-configuration** (portable scripts contain no hardcoded project constants; overrides rarely needed):
+
+| Variable | Purpose |
+|----------|---------|
+| `KANBAN_DIR` | Kanban boards root (default `~/.hermes/kanban/boards`) |
+| `KANBAN_REPO_DIR` | Repo checkout override (default: board's `default_workdir`) |
+| `KANBAN_REPO` | `owner/repo` override (default: parsed from `git remote get-url origin` in the repo dir) |
+| `KANBAN_DB` | Kanban DB path override (default: first `kanban.db` under `KANBAN_DIR`) |
+| `KANBAN_DEPLOY_WORKFLOW` | Deploy workflow file ingest-deploy-failures watches (default `deploy.yml`) |
+| `KB_VAULT` | Optional Obsidian vault for the roadmap docs mirror (`update-roadmap-docs`; unset = mirror disabled) |
 
 ## Pipeline
 
@@ -97,7 +189,8 @@ GH issue (labeled ready-for-agent)
 
 | Job | Schedule | Purpose |
 |-----|----------|---------|
-| `audit-stranded-worktrees` | every 2h | Flags worktree branches with unique commits not on main and no pending kanban work. Creates triage GH issue. |
+| `audit-stranded-worktrees` | every 15m | Flags worktree branches with unique commits not on main and no pending kanban work. Creates triage GH issue. |
+| `audit-archived-unmerged` | every 15m | Detects archived coder cards whose branch content never reached main with no merged PR — reopens the linked closed issue (premature-epic-close stranding guard). |
 | `audit-worktree-collisions` | every 5m | Detects worktree branch conflicts (same branch checked out by multiple worktrees). |
 | `audit-pr-guard` | every 5m | Enforces PR guard conditions (main-tip requirement, no workflow_dispatch from non-main branches). |
 | `audit-archive-cancelled` | every 15m | Archives cancelled kanban cards, cleans up stale state. |

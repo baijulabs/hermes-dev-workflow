@@ -281,9 +281,8 @@
       "deliver": "local",
       "workdir": "${HERMES_PROJECT_DIR:-/home/user/project}"
     }
-  ]
-},
-    {
+,
+{
       "id": "job-audit-archived-unmerged",
       "name": "audit-archived-unmerged",
       "prompt": "",
@@ -296,4 +295,5 @@
       "enabled": true,
       "deliver": "telegram:<chat_id>:<thread_id>",
       "workdir": "${HERMES_PROJECT_DIR:-/home/user/project}"
-    }
+    }  ]
+}

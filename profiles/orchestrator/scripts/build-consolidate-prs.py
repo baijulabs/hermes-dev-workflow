@@ -57,7 +57,7 @@ def _discover_repo():
                            capture_output=True, text=True, timeout=10,
                            cwd=_REPO_DIR)
         url = (r.stdout or "").strip()
-        m = re.search(r"[:/]([^/:]+)/([^/]+?)(\.git)?$", url)
+        m = re.search(r"[:/]([^/:]+)/([^/]+?)(?:\.git)?/?$", url)
         if m:
             return f"{m.group(1)}/{m.group(2)}"
     except Exception:

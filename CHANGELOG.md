@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **`setup.sh` was broken from zero — found and fixed by sandboxed install simulation.** Running setup.sh against a fresh `HERMES_HOME` surfaced 9 defects, all fixed and re-verified with a clean end-to-end pass:
+  1. Crashed at the first profile under `set -u` (sed referenced unset `HERMES_PROJECT_REPO`); placeholder matching now matches `${VAR:-default}` text instead of expanding the variable.
+  2. Skills install failed (`cp: cannot create directory`) — category subdirectories were never created.
+  3. Profiles were never *registered* — files copied under `~/.hermes/profiles/<name>/` are not a Hermes profile; `hermes profile create` now runs for all four workers and the dispatcher can actually route to them.
+  4. No `config.yaml` for any profile — orchestrator now gets the shipped `config.yaml.example` (with the critical `prefill_messages_file: SOUL.md`), workers get a generated minimal config with the project as `terminal.cwd`.
+  5. Board was created without `default_workdir` — setup now runs `hermes kanban boards set-default-workdir`; every portable script self-configures from this value.
+  6. `telegram:<chat_id>:<thread_id>` deliver placeholders were never substituted — new `--telegram-target` flag templates them.
+  7. Template comment lines leaked into `jobs.json` → invalid JSON → the cron engine loaded zero jobs. Comments are now stripped during templating.
+  8. `jobs.json.template` itself was structurally broken (an entry inserted outside the jobs array by a previous edit) — repaired and template now validated as JSON in CI-able form (20 jobs).
+  9. `setup.sh` accepted a non-git or remote-less `--dir` silently — pre-flight now fails fast; `gh auth status` warns when unauthenticated; `_discover_repo` no longer keeps a trailing `.git`.
+
+### Added
+- **README "From-Zero Install" section:** prerequisites (tools, gh auth, LLM key, Telegram target, target-repo requirements), the verified install commands with all setup.sh flags, the post-install checklist, and complete environment-variable tables (setup flags, `.env` secrets, script self-configuration overrides).
+### Fixed
 - **Repository-wide scrub of proprietary constants (public repo):** `update-roadmap-docs.py`, `ingest-deploy-failures.py`, `audit-stranded-worktrees.py`, `audit-kanban-health.sh`, and `build-reviewer-resolve.py` hardcoded project-specific repo paths, GitHub `owner/repo`, board slugs, the developer's vault path, and user home paths — leaking project identity into this public repo and preventing reuse. All orchestrator scripts now self-configure with zero hardcoded project data: repo path from the kanban board's `default_workdir`, `owner/repo` parsed from `git remote get-url origin`, board DB discovered under `KANBAN_DIR`, and the docs vault mirror gated behind the optional `KB_VAULT` env var (unset = mirror disabled, fail-closed safety checks preserved). Overrides: `KANBAN_REPO_DIR`, `KANBAN_REPO`, `KANBAN_DB`, `KANBAN_DIR`, `WORKDIR`, `REPO`, `KB_VAULT`. Verified: all scripts resolve identical values to the previous hardcoded config, and `py_compile` + full-diff scrub grep pass.
 - **Docs/skills scrub:** `kanban-ci-automation` SKILL.md and the `qa` SOUL template carried the same project identifiers in ~25 example commands (board slug, repo slug, user home paths) and the staging domain. Replaced with `<board-slug>` / `<owner>/<repo>` / `~` placeholders; the qa staging URL now requires `HERMES_STAGING_URL` with no baked-in default. A repo-wide `git grep` for project identifiers now returns clean except the LICENSE copyright holder and the README clone URL (both legitimately the repo's own identity).
 

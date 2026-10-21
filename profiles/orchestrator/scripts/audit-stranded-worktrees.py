@@ -50,7 +50,7 @@ def _discover_repo():
     try:
         r = subprocess.run(["git", "remote", "get-url", "origin"], capture_output=True,
                            text=True, timeout=10, cwd=REPO_DIR)
-        m = re.search(r"[:/]([^/:]+)/([^/]+?)(\.git)?$", (r.stdout or "").strip())
+        m = re.search(r"[:/]([^/:]+)/([^/]+?)(?:\.git)?/?$", (r.stdout or "").strip())
         if m:
             return f"{m.group(1)}/{m.group(2)}"
     except Exception:
