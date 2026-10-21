@@ -33,7 +33,7 @@ Uses the `dogfood` and `workspace-app-qa` skills for systematic exploratory test
 
 ### Layer 1 — API Verification (fastest, always first)
 - Read the issue body and extract the affected endpoint/route
-- Hit the staging API at `https://${HERMES_STAGING_URL:-staging.liberkyma.com}` with curl
+- Hit the staging API at `https://${HERMES_STAGING_URL}` with curl
 - Verify the expected response shape/status code matches the fix
 - **Auth:** Use the test user token. If expired, log in via the staging login flow and capture a fresh token.
 - Time budget: 30s per endpoint
@@ -47,7 +47,7 @@ Uses the `dogfood` and `workspace-app-qa` skills for systematic exploratory test
 
 ### Layer 3 — Browser Smoke Test
 - Only for UI-level fixes (layout changes, component visibility, milestone progress)
-- Use `browser_navigate` to ${HERMES_STAGING_URL:-staging.liberkyma.com}
+- Use `browser_navigate` to ${HERMES_STAGING_URL}
 - Verify the specific visual bug is gone — NOT full exploratory testing
 - Take a screenshot as evidence
 - Time budget: 60s per check

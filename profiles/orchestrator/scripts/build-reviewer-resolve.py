@@ -20,7 +20,21 @@ SCRIPTS_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPTS_DIR))
 from agent_queue import enqueue_review_failed
 
-KANBAN_DB = Path.home() / ".hermes" / "kanban" / "boards" / "liberkyma-dev" / "kanban.db"
+def _discover_kanban_db() -> Path:
+    """First kanban.db under the boards root. Env override: KANBAN_DB."""
+    override = os.environ.get("KANBAN_DB")
+    if override:
+        return Path(override).expanduser()
+    boards = Path.home() / ".hermes" / "kanban" / "boards"
+    if boards.is_dir():
+        for board_dir in sorted(boards.iterdir()):
+            db = board_dir / "kanban.db"
+            if db.is_file():
+                return db
+    return boards / "kanban.db"
+
+
+KANBAN_DB = _discover_kanban_db()
 
 
 def main():

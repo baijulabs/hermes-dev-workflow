@@ -246,7 +246,7 @@ A `no_agent: true` Python script (`pr-check-watch.py`) polls all open PRs for me
 
 **CI re-trigger logic:** Only re-triggers CI when the PR branch HEAD has changed since the failure was first detected (i.e., a fix coder actually pushed to the branch). A bare open PR with unchanged HEAD does NOT trigger re-run — that burns CI minutes on stale code. See the `pr-check-watch.py` script for the full implementation including REST API fallback when GraphQL is exhausted.
 
-**Kanban DB path:** `/home/julianbeggs/.hermes/kanban/boards/liberkyma-dev/kanban.db`
+**Kanban DB path:** `~/.hermes/kanban/boards/<board-slug>/kanban.db`
 - Do NOT use `find` to locate this — it can time out on the large state.db
 - The kanban directory lives at the top-level `.hermes/kanban/`, NOT inside a profile directory
 - Query with `sqlite3` to check for existing fix cards before creating new ones
@@ -301,7 +301,7 @@ gh pr list --repo <owner/repo> --state open \
 Filter out dependabot at the source:
 
 ```bash
-gh pr list --repo baijulabs/Liberkyma --state open \
+gh pr list --repo <owner>/<repo> --state open \
   --json number,title,headRefName,baseRefName,mergeable,statusCheckRollup \
   --jq '[.[] | select(.headRefName | startswith("dependabot/") | not)]'
 ```
@@ -309,7 +309,7 @@ gh pr list --repo baijulabs/Liberkyma --state open \
 One-shot classification into actionable cases:
 
 ```bash
-gh pr list --repo baijulabs/Liberkyma --state open \
+gh pr list --repo <owner>/<repo> --state open \
   --json number,title,headRefName,baseRefName,mergeable,statusCheckRollup \
   --jq '.[] | select(.headRefName | startswith("dependabot/") | not) | {
     number,
@@ -342,7 +342,7 @@ When a PR has `mergeable: "CONFLICTING"` or `mergeStateStatus: "DIRTY"`:
 1. **Deduplication** — Check kanban board for existing active cards targeting the same branch. Query BOTH `branch_name` AND `title` because fix cards may live on a different branch (e.g. `fix/df-*`) while referencing the target PR branch in their title:
 
    ```bash
-   sqlite3 ~/.hermes/kanban/boards/liberkyma-dev/kanban.db "
+   sqlite3 ~/.hermes/kanban/boards/<board-slug>/kanban.db "
      SELECT id, title, status FROM tasks
      WHERE status NOT IN ('done', 'cancelled', 'archived')
        AND (branch_name = '<branch>' OR title LIKE '%Resolve merge conflicts in <branch>%');
@@ -354,10 +354,10 @@ When a PR has `mergeable: "CONFLICTING"` or `mergeStateStatus: "DIRTY"`:
    **Pitfall — blocked/crashed coder card is not a real in-progress fix.** The dedup query checks `status NOT IN ('done', 'cancelled', 'archived')`. A card with `status='blocked'` is considered "active" by this query, but it is permanently stuck — the coder's worker process crashed (`gave_up` event: `"pid not alive"`) and the dispatcher already exhausted the failure limit. The card will never resolve on its own. **Do NOT skip the PR when the only active card is blocked.** Instead, check the card's status and recent `task_events`:
 
    ```bash
-   sqlite3 ~/.hermes/kanban/boards/liberkyma-dev/kanban.db "
+   sqlite3 ~/.hermes/kanban/boards/<board-slug>/kanban.db "
      SELECT id, status, result FROM tasks WHERE id='<existing_card_id>';
    "
-   sqlite3 ~/.hermes/kanban/boards/liberkyma-dev/kanban.db "
+   sqlite3 ~/.hermes/kanban/boards/<board-slug>/kanban.db "
      SELECT kind, payload FROM task_events
      WHERE task_id='<existing_card_id>' ORDER BY id DESC LIMIT 3;
    "
@@ -374,7 +374,7 @@ When a PR has `mergeable: "CONFLICTING"` or `mergeStateStatus: "DIRTY"`:
 
    **Coder card** — Always use `--json` to capture the task ID for chaining into the reviewer card:
    ```bash
-   hermes kanban --board liberkyma-dev create \
+   hermes kanban --board <board-slug> create \
      "Resolve merge conflicts in <branch>" \
      --assignee coder --workspace worktree --json
    ```
@@ -399,7 +399,7 @@ When a PR has `mergeable: "CONFLICTING"` or `mergeStateStatus: "DIRTY"`:
 
    **Reviewer card** — gated on the coder card. Capture the returned `id` for verification:
    ```bash
-   hermes kanban --board liberkyma-dev create \
+   hermes kanban --board <board-slug> create \
      "Review: Resolve merge conflicts in <branch>" \
      --assignee code-reviewer --parent <coder_task_id> --json
    ```
@@ -408,7 +408,7 @@ When a PR has `mergeable: "CONFLICTING"` or `mergeStateStatus: "DIRTY"`:
    ```bash
    python3 -c "
    import sqlite3
-   conn = sqlite3.connect('/home/julianbeggs/.hermes/kanban/boards/liberkyma-dev/kanban.db')
+   conn = sqlite3.connect('~/.hermes/kanban/boards/<board-slug>/kanban.db')
    body = f'''Review merge conflict resolution for <branch>.
    Coder task: <coder_task_id>
 
@@ -424,7 +424,7 @@ When a PR has `mergeable: "CONFLICTING"` or `mergeStateStatus: "DIRTY"`:
 
 4. **Verify pairing** — Confirm the parent-child linkage was stored:
    ```bash
-   sqlite3 ~/.hermes/kanban/boards/liberkyma-dev/kanban.db "
+   sqlite3 ~/.hermes/kanban/boards/<board-slug>/kanban.db "
      SELECT parent_id, child_id FROM task_links WHERE child_id='<reviewer_id>';
    "
    ```
@@ -435,7 +435,7 @@ When a PR has failing CI checks but no merge conflicts:
 
 1. **Deduplication** — Check for existing active cards targeting the branch:
    ```bash
-   sqlite3 ~/.hermes/kanban/boards/liberkyma-dev/kanban.db "
+   sqlite3 ~/.hermes/kanban/boards/<board-slug>/kanban.db "
      SELECT id FROM tasks
      WHERE status NOT IN ('done', 'cancelled', 'archived')
        AND branch_name = '<branch>';
@@ -443,7 +443,7 @@ When a PR has failing CI checks but no merge conflicts:
    ```
    Also check body content for fix cards on different branches that reference the same PR:
    ```bash
-   sqlite3 ~/.hermes/kanban/boards/liberkyma-dev/kanban.db "
+   sqlite3 ~/.hermes/kanban/boards/<board-slug>/kanban.db "
      SELECT id FROM tasks
      WHERE status NOT IN ('done', 'cancelled', 'archived')
        AND body LIKE '%<branch>%';
@@ -470,7 +470,7 @@ When a PR has failing CI checks but no merge conflicts:
 
    **Coder card** — use `--json` to capture the task ID:
    ```bash
-   hermes kanban --board liberkyma-dev create \
+   hermes kanban --board <board-slug> create \
      "[PRFIX-<timestamp>] Fix failing CI checks on branch <branch>" \
      --assignee coder --workspace worktree --json
    ```
@@ -496,7 +496,7 @@ When a PR has failing CI checks but no merge conflicts:
 
    **Reviewer card** — gated on the coder card. Capture the returned `id` and set body via Python (see Case A step 3 for the pattern):
    ```bash
-   hermes kanban --board liberkyma-dev create \
+   hermes kanban --board <board-slug> create \
      "Review: [PRFIX-<timestamp>] Fix failing CI checks on branch <branch>" \
      --assignee code-reviewer --parent <coder_task_id> --json
    ```
@@ -514,7 +514,7 @@ When `pr-check-watch` detects a PR with both merge conflicts AND failing CI chec
 **Cross-tick dedup — also check the kanban DB, not just the queue.** A `failing_checks` item can arrive in a LATER batch after the merge_conflict was already processed in a prior tick. The queue-only check would miss this and create duplicate fix cards. Before creating CI fix cards, also query the kanban DB for active merge-conflict fix cards targeting the same PR:
 
 ```sql
-sqlite3 ~/.hermes/kanban/boards/liberkyma-dev/kanban.db "
+sqlite3 ~/.hermes/kanban/boards/<board-slug>/kanban.db "
   SELECT id FROM tasks
   WHERE status IN ('todo', 'ready', 'running')
     AND title LIKE '%Resolve merge conflicts in wt/%'
@@ -557,11 +557,11 @@ The dedup query returns an active card, but the branch is still failing CI or ha
 
 ```bash
 # Check the card's actual status and events
-sqlite3 ~/.hermes/kanban/boards/liberkyma-dev/kanban.db "
+sqlite3 ~/.hermes/kanban/boards/<board-slug>/kanban.db "
   SELECT id, status, result, consecutive_failures
   FROM tasks WHERE id='<existing_card_id>';
 "
-sqlite3 ~/.hermes/kanban/boards/liberkyma-dev/kanban.db "
+sqlite3 ~/.hermes/kanban/boards/<board-slug>/kanban.db "
   SELECT kind, payload, created_at
   FROM task_events WHERE task_id='<existing_card_id>'
   ORDER BY id DESC LIMIT 3;
@@ -580,10 +580,10 @@ sqlite3 ~/.hermes/kanban/boards/liberkyma-dev/kanban.db "
 
 1. **Cancel the dead cards** — both the blocked coder and its (still `todo`/`ready`) paired reviewer:
    ```bash
-   sqlite3 ~/.hermes/kanban/boards/liberkyma-dev/kanban.db "
+   sqlite3 ~/.hermes/kanban/boards/<board-slug>/kanban.db "
      UPDATE tasks SET status='cancelled', result='superseded — worker crashed' WHERE id='<coder_id>';
    "
-   sqlite3 ~/.hermes/kanban/boards/liberkyma-dev/kanban.db "
+   sqlite3 ~/.hermes/kanban/boards/<board-slug>/kanban.db "
      UPDATE tasks SET status='cancelled', result='parent crashed — superseded' WHERE id='<reviewer_id>';
    "
    ```
@@ -641,7 +641,7 @@ gh label create test-failure --description "Test failures detected by automation
 When a coder card is `running` but the `tasks` table shows `status='running'`, verify it's still alive by checking for recent heartbeats:
 
 ```bash
-sqlite3 ~/.hermes/kanban/boards/liberkyma-dev/kanban.db "
+sqlite3 ~/.hermes/kanban/boards/<board-slug>/kanban.db "
   SELECT id, kind, created_at, payload
   FROM task_events
   WHERE task_id='<coder_task_id>'
@@ -757,8 +757,8 @@ When you fix an orchestration script (e.g. strip the resolution section from `he
 **Diagnosis ladder (Aug 2026 real case — #840 comment spam):**
 
 1. **Pause the cron job first** (`hermes cron pause <job-id>`). If the behavior continues while paused, the cron is NOT the source — a stray copy is being launched by a different scheduler, or a gateway holds the old script.
-2. **Find the live process and its path:** `ps aux | grep <script-name> | grep -v grep`. If the running path is not the canonical profile path, that is the culprit (e.g. `/bin/bash /home/julianbeggs/scripts/hermes_github_sync.sh`).
-3. **Find ALL copies and grep for the old marker string:** `find /home/julianbeggs -name "<script>" -type f` then count occurrences of the old code marker (e.g. `gh issue close`, `Automated Resolution`) in each. Any copy with matches > 0 is a landmine.
+2. **Find the live process and its path:** `ps aux | grep <script-name> | grep -v grep`. If the running path is not the canonical profile path, that is the culprit (e.g. `/bin/bash ~/scripts/<sync-script>.sh`).
+3. **Find ALL copies and grep for the old marker string:** `find ~ -name "<script>" -type f` then count occurrences of the old code marker (e.g. `gh issue close`, `Automated Resolution`) in each. Any copy with matches > 0 is a landmine.
 4. **Check gateway start times vs edit time:** a process started BEFORE the file edit may have the old content loaded (bash scripts are re-read per tick, but the scheduler/dispatch layer resolves and caches per process).
 5. **Delete stray copies, then resume the paused cron.** Verify the next 2-3 ticks are silent.
 
@@ -871,7 +871,7 @@ Both the coder card body and the reviewer card body need this pattern when creat
 **LOOP `review-failed` items never drain unless you ARCHIVE the blocked reviewer.** When a `review-failed` item's `findings.summary` starts with `[LOOP: N prior cycles]`, the processor must escalate (no fix cards) — but it MUST also change the underlying reviewer card's status from `blocked` to `archived`. If the reviewer stays `blocked`, `review-failed-watch.py` re-detects it and re-emits `reviewer:<id>` on every 5-min tick, so the agent queue refills with identical pending LOOP items each batch and the loop never resolves. Archiving the reviewer is what actually drains the queue. Real case (Aug 2026): three reviewers at `[LOOP: 70 prior cycles]` (merge-regression: `check_step5_completion` re-loses its `LEFT JOIN` on every re-merge; fix commits landing on the wrong `wt/t_<other>` branch; tests weakened) — archiving all three produced the first empty queue in days. Escalate note should carry the recurring root cause for human triage:
 
 ```bash
-sqlite3 ~/.hermes/kanban/boards/liberkyma-dev/kanban.db \
+sqlite3 ~/.hermes/kanban/boards/<board-slug>/kanban.db \
   "UPDATE tasks SET status='archived', result='ESCALATED to human: [LOOP N prior cycles] <root cause>. Cannot auto-resolve via code-reviewer cycle.' WHERE id='<blocked_reviewer_id>';"
 ```
 

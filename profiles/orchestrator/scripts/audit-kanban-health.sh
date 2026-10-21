@@ -3,7 +3,8 @@ set -euo pipefail
 
 # ── CONFIG ──
 GATEWAY_SERVICE="hermes-gateway"
-KANBAN_DB="${KANBAN_DB:-$HOME/.hermes/kanban/boards/liberkyma-dev/kanban.db}"
+# Default: first kanban.db under the boards root (portable — no project slug)
+KANBAN_DB="${KANBAN_DB:-$(find "$HOME/.hermes/kanban/boards" -maxdepth 2 -name kanban.db 2>/dev/null | head -1)}"
 PROFILE="${PROFILE:-orchestrator}"
 STATE_DIR="$HOME/.hermes/profiles/$PROFILE/state"
 STATE_FILE="$STATE_DIR/kanban-health-check.json"
