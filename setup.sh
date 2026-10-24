@@ -136,7 +136,22 @@ copy_profile() {
     # Scripts
     if [ -d "$src/scripts" ]; then
         mkdir -p "$dst/scripts"
+        # Scripts carry the same ${VAR:-default} placeholders as the cron
+        # template (board slug, project dir, owner/repo). Copy then substitute
+        # in place — copying raw placeholders produces scripts that silently
+        # no-op (board path never exists) or crash on a nonexistent DB.
         cp -r "$src/scripts/"* "$dst/scripts/" 2>/dev/null || true
+        for script in "$dst/scripts/"*.py "$dst/scripts/"*.sh; do
+            [ -f "$script" ] || continue
+            if grep -q '\${HERMES_' "$script"; then
+                sed -i \
+                    -e "s|\${HERMES_KANBAN_BOARD:-[^}]*}|$BOARD_SLUG|g" \
+                    -e "s|\${HERMES_PROJECT_DIR:-[^}]*}|$PROJECT_DIR|g" \
+                    -e "s|\${HERMES_PROJECT_REPO:-[^}]*}|$REPO|g" \
+                    -e "s|\${HERMES_STAGING_URL:-[^}]*}|${STAGING_URL:-staging.example.com}|g" \
+                    "$script"
+            fi
+        done
         find "$dst/scripts" -name "*.py" -o -name "*.sh" | xargs chmod +x 2>/dev/null || true
     fi
 
