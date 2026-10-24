@@ -39,13 +39,14 @@ import agent_queue  # noqa: E402
 
 MAX_ACTIONS_PER_TICK = 2
 MAX_ATTEMPTS = 3
-BOARD_SLUG = os.environ.get("HERMES_KANBAN_BOARD", "main-dev")
-BOARD_DIR = Path.home() / ".hermes" / "kanban" / "boards" / BOARD_SLUG
-DB = BOARD_DIR / "kanban.db"
 
-# Repo root from the board's own config — never hardcode.
-_board_meta = json.loads((BOARD_DIR / "board.json").read_text())
-REPO = Path(_board_meta["default_workdir"])
+# Resolved lazily by configure() — module import must never touch the
+# filesystem outside the script's own directory (testability + a board-less
+# environment must fail in main(), not at import).
+BOARD_SLUG = None
+BOARD_DIR = None
+DB = None
+REPO = None
 
 GUARD = (
     "CRITICAL: Before writing code, run `git branch --show-current` and verify "
@@ -54,14 +55,42 @@ GUARD = (
 )
 
 
+def configure(board_slug=None, kanban_dir=None, repo_dir=None):
+    """Resolve board + repo paths. Precedence: explicit args > env overrides
+    (KANBAN_DIR, KANBAN_REPO_DIR, HERMES_KANBAN_BOARD) > board.json's
+    default_workdir. Called by main(); tests call it directly."""
+    global BOARD_SLUG, BOARD_DIR, DB, REPO
+    BOARD_SLUG = board_slug or os.environ.get("HERMES_KANBAN_BOARD", "main-dev")
+    if kanban_dir:
+        BOARD_DIR = Path(kanban_dir)
+    else:
+        env_dir = os.environ.get("KANBAN_DIR")
+        BOARD_DIR = Path(env_dir) if env_dir else (
+            Path.home() / ".hermes" / "kanban" / "boards" / BOARD_SLUG)
+    DB = BOARD_DIR / "kanban.db"
+    if repo_dir:
+        REPO = Path(repo_dir)
+    elif os.environ.get("KANBAN_REPO_DIR"):
+        REPO = Path(os.environ["KANBAN_REPO_DIR"])
+    else:
+        # Repo root from the board's own config — never hardcode.
+        _board_meta = json.loads((BOARD_DIR / "board.json").read_text())
+        REPO = Path(_board_meta["default_workdir"])
+
+
 def sh(cmd, cwd=None, timeout=120):
-    """Run a command, return (ok, stdout)."""
+    """Run a command, return (ok, combined_output)."""
+    env = dict(os.environ)
+    env["HERMES_KANBAN_BOARD"] = BOARD_SLUG or ""
     try:
-        r = subprocess.run(
-            cmd, shell=isinstance(cmd, str), cwd=cwd or str(REPO),
-            capture_output=True, text=True, timeout=timeout,
-            env={**os.environ, "HERMES_KANBAN_BOARD": BOARD_SLUG},
-        )
+        if isinstance(cmd, str):
+            r = subprocess.run(cmd, shell=True, cwd=cwd or str(REPO),
+                               capture_output=True, text=True, timeout=timeout,
+                               env=env)
+        else:
+            r = subprocess.run(cmd, cwd=cwd or str(REPO),
+                               capture_output=True, text=True, timeout=timeout,
+                               env=env)
         return r.returncode == 0, (r.stdout or "") + (r.stderr or "")
     except (subprocess.TimeoutExpired, OSError) as e:
         return False, str(e)
@@ -116,9 +145,10 @@ def create_card(title, body, assignee, parent=None, idem_key=None,
     if idem_key:
         cmd += ["--idempotency-key", idem_key]
     try:
+        env = dict(os.environ)
+        env["HERMES_KANBAN_BOARD"] = BOARD_SLUG or ""
         r = subprocess.run(cmd, input=body, capture_output=True, text=True,
-                           timeout=90,
-                           env={**os.environ, "HERMES_KANBAN_BOARD": BOARD_SLUG})
+                           timeout=90, env=env)
         out = (r.stdout or "") + (r.stderr or "")
         if r.returncode != 0:
             return None, out.strip()[:300]
@@ -279,9 +309,11 @@ HANDLERS = {
 
 
 def main():
+    if REPO is None:  # fresh process (cron tick): resolve from env/board.json
+        configure()
     counts = agent_queue.get_queue_summary()
     if counts.get("pending", 0) == 0:
-        return  # silent
+        return 0  # silent
 
     actions, lines = [], []
     lock_fd, data = agent_queue._locked_read()

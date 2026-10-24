@@ -106,7 +106,8 @@
       },
       "enabled": true,
       "deliver": "origin",
-      "workdir": "${HERMES_PROJECT_DIR:-/home/user/project}"
+      "workdir": "${HERMES_PROJECT_DIR:-/home/user/project}",
+      "script": "build-reviewer-resolve.py"
     },
     {
       "id": "job-build-reviewer-approve",
