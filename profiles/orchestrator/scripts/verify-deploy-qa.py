@@ -112,6 +112,28 @@ def main():
         state["last_verified_version"] = version
         save_state(state)
 
+        # Enqueue a deploy-qa work item for drain-agent-queue.py, which
+        # creates the QA verification card deterministically (the
+        # orchestrator-owned act layer: scripts detect, playbooks act).
+        try:
+            sys.path.insert(0, str(Path(__file__).resolve().parent))
+            import agent_queue
+            import time
+            agent_queue.enqueue(
+                item_id=f"qa_{run_id}_{int(time.time())}",
+                item_type="deploy-qa",
+                dedup_key=f"deploy:{run_id}",
+                payload={
+                    "deploy_sha": run_id,
+                    "run_id": run_id,
+                    "version": version,
+                    "label": f"v{version}" if version != "unknown" else f"run {run_id}",
+                    "deployed_at": deploy.get("created", ""),
+                },
+            )
+        except Exception:
+            pass  # the stdout notice still goes out even if queueing fails
+
         # Output deploy details as JSON for the agent to consume
         print(json.dumps(payload))
         return

@@ -1,11 +1,9 @@
+
+    # drain-agent-queue — deterministic playbook handler for the agent
+    # queue (review-failed / ci-failure / deploy-qa -> fix + reviewer
+    # cards). Replaces the LLM queue-agent-processor cron.
 {
   "jobs": [
-    # 5m jobs are staggered across :00-:04 to avoid kanban DB write contention:
-    # Slot :00 — ingest-gh-issues, audit-worktree-collisions
-    # Slot :01 — ingest-ci-failures, audit-pr-guard
-    # Slot :02 — build-reviewer-resolve, build-coder-resolve
-    # Slot :03 — sync-gh-comments, build-reviewer-approve
-    # Slot :04 — build-consolidate-prs
     {
       "id": "job-ingest-gh-issues",
       "name": "ingest-gh-issues",
@@ -13,9 +11,16 @@
       "skills": [],
       "script": "ingest-gh-issues.sh",
       "no_agent": true,
-      "schedule": {"kind": "interval", "minutes": 5, "display": "every 5m (stagger :00)"},
+      "schedule": {
+        "kind": "interval",
+        "minutes": 5,
+        "display": "every 5m (stagger :00)"
+      },
       "schedule_display": "every 5m (stagger :00)",
-      "repeat": {"times": null, "completed": 0},
+      "repeat": {
+        "times": null,
+        "completed": 0
+      },
       "enabled": true,
       "deliver": "local",
       "workdir": "${HERMES_PROJECT_DIR:-/home/user/project}"
@@ -23,48 +28,43 @@
     {
       "id": "job-ingest-ci-failures",
       "name": "ingest-ci-failures",
-      "prompt": "Check open PRs on ${HERMES_PROJECT_REPO:-owner/project} for:\n1. Merge conflicts (where `mergeable` is \"CONFLICTING\" or `mergeStateStatus` is \"DIRTY\")\n2. Failing CI checks (where any status check has failed)\n\nApply the following logic for each open PR (ignoring dependabot PRs where branches start with \"dependabot/\"):\n\n## Case A: Merge Conflicts\nIf a PR has merge conflicts:\n1. **Deduplication**: Check the Kanban board (via SQLite queries or `hermes kanban list`) to see if there is already an active (non-archived, non-done) card on the board containing \"Resolve merge conflicts in <branch>\" in its title or targeting `<branch>`.\n   - If an active card exists, skip it.\n2. **Card Creation**: If no active card exists, create a paired coder + reviewer task with workspace_kind=worktree. The fix should be pushed directly to the existing PR's branch (not a new branch).\n\n## Case B: CI Failures\nIf a PR has failing CI checks:\n1. **Deduplication**: Check if there's already an active kanban card for this PR's failure. If so, skip.\n2. **Re-trigger**: If the last successful run on this branch is more recent than the failed run, the failure is stale — skip.\n3. **Card Creation**: Create a `[FIX-<timestamp>]` card on the kanban board with workspace_kind=worktree.\n\nReport what was found: how many PRs scanned, how many conflicts, how many CI failures.",
-      "skills": ["project-operations", "github-pr-workflow"],
-      "model": "deepseek/deepseek-v4-flash",
-      "provider": "openrouter",
+      "prompt": "",
+      "skills": [],
       "script": "ingest-ci-failures.py",
-      "no_agent": false,
-      "schedule": {"kind": "interval", "minutes": 5, "display": "every 5m"},
+      "no_agent": true,
+      "schedule": {
+        "kind": "interval",
+        "minutes": 5,
+        "display": "every 5m"
+      },
       "schedule_display": "every 5m",
-      "repeat": {"times": null, "completed": 0},
+      "repeat": {
+        "times": null,
+        "completed": 0
+      },
       "enabled": true,
-      "deliver": "telegram:<chat_id>:<thread_id>",
+      "deliver": "origin",
       "workdir": "${HERMES_PROJECT_DIR:-/home/user/project}"
     },
     {
       "id": "job-ingest-deploy-failures",
       "name": "ingest-deploy-failures",
-      "prompt": "A deploy pipeline just failed on ${HERMES_PROJECT_REPO:-owner/project}. The script above detected this is a NEW failure (not in state tracking). Apply dedup: (1) if there are open kanban fix cards on this branch → silent exit (fix in flight), (2) if there's an open PR on this branch → re-trigger CI, (3) neither → analyze the failure and create a fix card on the kanban board with workspace_kind=worktree.\n\nBRANCH NAMING: When creating fix cards, the branch name must be unique per task. Append the task ID to the branch name: fix/df-<timestamp>-<short-name>-<task-id>. This prevents git worktree collisions.\n\nCheck the deploy run at the JOB level (not workflow conclusion). A workflow can be 'failure' while Deploy to Staging is 'success' (non-gating test failed). Only create fix cards when the Deploy to Staging job itself failed.",
-      "skills": ["project-operations", "github-pr-workflow"],
-      "model": "deepseek/deepseek-v4-flash",
-      "provider": "openrouter",
+      "prompt": "",
+      "skills": [],
       "script": "ingest-deploy-failures.py",
-      "no_agent": false,
-      "schedule": {"kind": "interval", "minutes": 15, "display": "every 15m"},
+      "no_agent": true,
+      "schedule": {
+        "kind": "interval",
+        "minutes": 15,
+        "display": "every 15m"
+      },
       "schedule_display": "every 15m",
-      "repeat": {"times": null, "completed": 0},
+      "repeat": {
+        "times": null,
+        "completed": 0
+      },
       "enabled": true,
-      "deliver": "telegram:<chat_id>:<thread_id>",
-      "workdir": "${HERMES_PROJECT_DIR:-/home/user/project}"
-    },
-    {
-      "id": "job-queue-agent-processor",
-      "name": "queue-agent-processor",
-      "prompt": "Process the agent queue for ${HERMES_KANBAN_BOARD:-project-dev}. Claims ready cards and dispatches them to coder/reviewer workers. Runs during business hours only.\n\n## Also: Triage stranded worktree GH issues\n\nScan the repo for open `triage`-labeled GH issues with titles matching `stale-fix: stranded worktree *`. For each:\n\n1. Extract the branch name from the issue title.\n2. If the branch doesn't exist, close the issue with comment.\n3. Check if commits from the branch are already merged to main (search commit subjects).\n4. If all commits on main → close the issue.\n5. If commits NOT on main → create a kanban fix card. Close the issue referencing the card.",
-      "skills": ["kanban-orchestrator", "kanban-ci-automation", "github-pr-workflow"],
-      "model": "deepseek/deepseek-v4-flash",
-      "provider": "openrouter",
-      "no_agent": false,
-      "schedule": {"kind": "cron", "expr": "*/30 7-21 * * *", "display": "*/30 7-21 * * *"},
-      "schedule_display": "*/30 7-21 * * *",
-      "repeat": {"times": null, "completed": 0},
-      "enabled": true,
-      "deliver": "telegram:<chat_id>:<thread_id>",
+      "deliver": "origin",
       "workdir": "${HERMES_PROJECT_DIR:-/home/user/project}"
     },
     {
@@ -74,9 +74,16 @@
       "skills": [],
       "script": "build-consolidate-prs.py",
       "no_agent": true,
-      "schedule": {"kind": "interval", "minutes": 5, "display": "every 5m"},
+      "schedule": {
+        "kind": "interval",
+        "minutes": 5,
+        "display": "every 5m"
+      },
       "schedule_display": "every 5m",
-      "repeat": {"times": null, "completed": 0},
+      "repeat": {
+        "times": null,
+        "completed": 0
+      },
       "enabled": true,
       "deliver": "telegram:<chat_id>:<thread_id>",
       "workdir": "${HERMES_PROJECT_DIR:-/home/user/project}"
@@ -84,17 +91,23 @@
     {
       "id": "job-build-reviewer-resolve",
       "name": "build-reviewer-resolve",
-      "prompt": "Check the ${HERMES_KANBAN_BOARD:-project-dev} kanban board for blocked code-reviewer cards that need auto-resolution.\n\n## Instructions\n1. Query the kanban board for tasks where status=blocked AND assignee=code-reviewer.\n2. For each blocked card, read the block reason and comments.\n3. If the block reason starts with \"review-failed:\" — this is a failed code review that needs auto-resolution. Load the kanban-orchestrator skill's Automated Review-Failed Resolution playbook and follow it exactly:\n   - Read the reviewer's structured comment (findings, files, verification)\n   - Extract the fix requirements\n   - Create a new coder card with the reviewer's findings baked into the body (include branch guardrails and BASE BRANCH from the original card)\n   - Create a paired code-reviewer card with parents=[new_coder_id]\n   - Comment on and archive the old blocked reviewer card\n4. If the block reason is something else — skip it and leave it for human triage.\n5. If a card has been resolved 3+ times already — escalate: do not create another fix card, instead comment asking for human review.\n\nReport what you did: how many blocked cards found, how many auto-resolved, what cards were created.",
-      "skills": ["kanban-orchestrator"],
-      "model": "deepseek/deepseek-v4-flash",
-      "provider": "openrouter",
-      "no_agent": false,
-      "schedule": {"kind": "interval", "minutes": 5, "display": "every 5m"},
+      "prompt": "",
+      "skills": [],
+      "no_agent": true,
+      "schedule": {
+        "kind": "interval",
+        "minutes": 5,
+        "display": "every 5m"
+      },
       "schedule_display": "every 5m",
-      "repeat": {"times": null, "completed": 0},
+      "repeat": {
+        "times": null,
+        "completed": 0
+      },
       "enabled": true,
-      "deliver": "telegram:<chat_id>:<thread_id>",
-      "workdir": "${HERMES_PROJECT_DIR:-/home/user/project}"
+      "deliver": "origin",
+      "workdir": "${HERMES_PROJECT_DIR:-/home/user/project}",
+      "script": "build-reviewer-resolve.py"
     },
     {
       "id": "job-build-reviewer-approve",
@@ -103,9 +116,16 @@
       "skills": [],
       "script": "build-reviewer-approve.py",
       "no_agent": true,
-      "schedule": {"kind": "interval", "minutes": 5, "display": "every 5m"},
+      "schedule": {
+        "kind": "interval",
+        "minutes": 5,
+        "display": "every 5m"
+      },
       "schedule_display": "every 5m",
-      "repeat": {"times": null, "completed": 0},
+      "repeat": {
+        "times": null,
+        "completed": 0
+      },
       "enabled": true,
       "deliver": "telegram:<chat_id>:<thread_id>",
       "workdir": "${HERMES_PROJECT_DIR:-/home/user/project}"
@@ -117,9 +137,16 @@
       "skills": [],
       "script": "build-coder-resolve.py",
       "no_agent": true,
-      "schedule": {"kind": "interval", "minutes": 5, "display": "every 5m"},
+      "schedule": {
+        "kind": "interval",
+        "minutes": 5,
+        "display": "every 5m"
+      },
       "schedule_display": "every 5m",
-      "repeat": {"times": null, "completed": 0},
+      "repeat": {
+        "times": null,
+        "completed": 0
+      },
       "enabled": true,
       "deliver": "telegram:<chat_id>:<thread_id>",
       "workdir": "${HERMES_PROJECT_DIR:-/home/user/project}"
@@ -131,9 +158,16 @@
       "skills": [],
       "script": "merge-ready-prs.py",
       "no_agent": true,
-      "schedule": {"kind": "interval", "minutes": 10, "display": "every 10m"},
+      "schedule": {
+        "kind": "interval",
+        "minutes": 10,
+        "display": "every 10m"
+      },
       "schedule_display": "every 10m",
-      "repeat": {"times": null, "completed": 0},
+      "repeat": {
+        "times": null,
+        "completed": 0
+      },
       "enabled": true,
       "deliver": "telegram:<chat_id>:<thread_id>",
       "workdir": "${HERMES_PROJECT_DIR:-/home/user/project}"
@@ -145,9 +179,16 @@
       "skills": [],
       "script": "audit-stranded-worktrees.py",
       "no_agent": true,
-      "schedule": {"kind": "interval", "minutes": 120, "display": "every 120m"},
+      "schedule": {
+        "kind": "interval",
+        "minutes": 120,
+        "display": "every 120m"
+      },
       "schedule_display": "every 120m",
-      "repeat": {"times": null, "completed": 0},
+      "repeat": {
+        "times": null,
+        "completed": 0
+      },
       "enabled": true,
       "deliver": "telegram:<chat_id>:<thread_id>",
       "workdir": "${HERMES_PROJECT_DIR:-/home/user/project}"
@@ -159,9 +200,16 @@
       "skills": [],
       "script": "audit-worktree-collisions.py",
       "no_agent": true,
-      "schedule": {"kind": "interval", "minutes": 5, "display": "every 5m"},
+      "schedule": {
+        "kind": "interval",
+        "minutes": 5,
+        "display": "every 5m"
+      },
       "schedule_display": "every 5m",
-      "repeat": {"times": null, "completed": 0},
+      "repeat": {
+        "times": null,
+        "completed": 0
+      },
       "enabled": true,
       "deliver": "telegram:<chat_id>:<thread_id>",
       "workdir": "${HERMES_PROJECT_DIR:-/home/user/project}"
@@ -173,9 +221,16 @@
       "skills": [],
       "script": "audit-pr-guard.py",
       "no_agent": true,
-      "schedule": {"kind": "interval", "minutes": 5, "display": "every 5m"},
+      "schedule": {
+        "kind": "interval",
+        "minutes": 5,
+        "display": "every 5m"
+      },
       "schedule_display": "every 5m",
-      "repeat": {"times": null, "completed": 0},
+      "repeat": {
+        "times": null,
+        "completed": 0
+      },
       "enabled": true,
       "deliver": "telegram:<chat_id>:<thread_id>",
       "workdir": "${HERMES_PROJECT_DIR:-/home/user/project}"
@@ -187,9 +242,16 @@
       "skills": [],
       "script": "audit-archive-cancelled.py",
       "no_agent": true,
-      "schedule": {"kind": "interval", "minutes": 15, "display": "every 15m"},
+      "schedule": {
+        "kind": "interval",
+        "minutes": 15,
+        "display": "every 15m"
+      },
       "schedule_display": "every 15m",
-      "repeat": {"times": null, "completed": 0},
+      "repeat": {
+        "times": null,
+        "completed": 0
+      },
       "enabled": true,
       "deliver": "telegram:<chat_id>:<thread_id>",
       "workdir": "${HERMES_PROJECT_DIR:-/home/user/project}"
@@ -201,9 +263,16 @@
       "skills": [],
       "script": "audit-prune-worktrees.sh",
       "no_agent": true,
-      "schedule": {"kind": "interval", "minutes": 2880, "display": "every 2880m"},
+      "schedule": {
+        "kind": "interval",
+        "minutes": 2880,
+        "display": "every 2880m"
+      },
       "schedule_display": "every 2880m",
-      "repeat": {"times": null, "completed": 0},
+      "repeat": {
+        "times": null,
+        "completed": 0
+      },
       "enabled": true,
       "deliver": "telegram:<chat_id>:<thread_id>",
       "workdir": "${HERMES_PROJECT_DIR:-/home/user/project}"
@@ -215,9 +284,16 @@
       "skills": [],
       "script": "audit-kanban-health.sh",
       "no_agent": true,
-      "schedule": {"kind": "interval", "minutes": 180, "display": "every 180m"},
+      "schedule": {
+        "kind": "interval",
+        "minutes": 180,
+        "display": "every 180m"
+      },
       "schedule_display": "every 180m",
-      "repeat": {"times": null, "completed": 0},
+      "repeat": {
+        "times": null,
+        "completed": 0
+      },
       "enabled": true,
       "deliver": "telegram:<chat_id>:<thread_id>",
       "workdir": "${HERMES_PROJECT_DIR:-/home/user/project}"
@@ -225,30 +301,47 @@
     {
       "id": "job-verify-deploy-qa",
       "name": "verify-deploy-qa",
-      "prompt": "You are the QA agent. Follow your SOUL.md workflow.\n\n## Pre-run context\n\nThe script verify-deploy-qa.py ran before you. If stdout is empty, there is NO new deploy to verify.\n\nIf stdout contains JSON, a new deploy was detected. Run Mode 1 (Fix Verification) then Mode 2 Per-Deploy Targeted Dogfood:\n\nMODE 1 — Fix Verification:\n1. Parse the deploy JSON payload (version, branch, run_id)\n2. Query GitHub for issues closed since the last verified deploy\n3. For each issue, run Layer 1 (API), Layer 2 (DB), or Layer 3 (Browser) as appropriate\n4. Layer 4: confirm deployed version matches\n5. Report failures via Telegram, create full report as GitHub issue\n6. For any regression: create GH issue with labels 'bug', 'QA review'\n\nMODE 2 — Per-Deploy Targeted Dogfood:\n1. Load the dogfood and workspace-app-qa skills\n2. Determine which areas changed: git diff --name-only <previous-version>..HEAD\n3. Map changed files to workspace steps\n4. For each affected step, follow workspace-app-qa testing phases\n5. Also verify: login, dashboard, cross-step navigation\n6. Critical/High findings: auto-create GH issues with 'bug', 'QA review', 'dogfood' labels\n7. Medium/Low: include in report body\n\n## State\n- Skip if deploy already verified (check state/last_verified_deploy.json)\n- Append to state/verification_history.json after each run",
-      "skills": ["dogfood", "workspace-app-qa", "github-issues", "github-pr-workflow", "project-operations"],
-      "model": "deepseek/deepseek-v4-flash",
-      "provider": "openrouter",
+      "prompt": "",
+      "skills": [],
       "script": "verify-deploy-qa.py",
-      "no_agent": false,
-      "schedule": {"kind": "interval", "minutes": 10, "display": "every 10m"},
+      "no_agent": true,
+      "schedule": {
+        "kind": "interval",
+        "minutes": 10,
+        "display": "every 10m"
+      },
       "schedule_display": "every 10m",
-      "repeat": {"times": null, "completed": 0},
+      "repeat": {
+        "times": null,
+        "completed": 0
+      },
       "enabled": true,
-      "deliver": "telegram:<chat_id>:<thread_id>",
+      "deliver": "origin",
       "workdir": "${HERMES_PROJECT_DIR:-/home/user/project}"
     },
     {
       "id": "job-verify-dogfood",
       "name": "verify-dogfood",
-      "prompt": "You are the QA agent running the WEEKLY FULL DOGFOOD SCAN. Follow your SOUL.md Mode 2 — Weekly Full Scan workflow.\n\n## Instructions\n1. Load the dogfood and workspace-app-qa skills\n2. Log in to ${HERMES_STAGING_URL:-staging.project.com}\n3. Systematically test ALL surfaces in order\n4. Cross-cutting checks: i18n, dark mode, 404, responsive\n5. Take annotated screenshots for every finding\n6. Capture console errors per page\n7. Create the full QA report as a GitHub issue with label 'qa-report' + 'dogfood'\n\n## Finding Handling\n- Critical/High: auto-create GH issues with labels 'bug', 'QA review', 'dogfood'\n- Medium/Low: include in report body for manual review\n\n## State\n- Save completion to state/last_dogfood_weekly.json\n- Append findings summary to state/verification_history.json",
-      "skills": ["dogfood", "workspace-app-qa", "github-issues", "project-operations"],
+      "prompt": "You are the QA agent running the WEEKLY FULL DOGFOOD SCAN. Follow your SOUL.md Mode 2 \u2014 Weekly Full Scan workflow.\n\n## Instructions\n1. Load the dogfood and workspace-app-qa skills\n2. Log in to ${HERMES_STAGING_URL:-staging.project.com}\n3. Systematically test ALL surfaces in order\n4. Cross-cutting checks: i18n, dark mode, 404, responsive\n5. Take annotated screenshots for every finding\n6. Capture console errors per page\n7. Create the full QA report as a GitHub issue with label 'qa-report' + 'dogfood'\n\n## Finding Handling\n- Critical/High: auto-create GH issues with labels 'bug', 'QA review', 'dogfood'\n- Medium/Low: include in report body for manual review\n\n## State\n- Save completion to state/last_dogfood_weekly.json\n- Append findings summary to state/verification_history.json",
+      "skills": [
+        "dogfood",
+        "workspace-app-qa",
+        "github-issues",
+        "project-operations"
+      ],
       "model": "deepseek/deepseek-v4-flash",
       "provider": "openrouter",
       "no_agent": false,
-      "schedule": {"kind": "cron", "expr": "0 8 * * 6", "display": "0 8 * * 6"},
+      "schedule": {
+        "kind": "cron",
+        "expr": "0 8 * * 6",
+        "display": "0 8 * * 6"
+      },
       "schedule_display": "0 8 * * 6",
-      "repeat": {"times": null, "completed": 0},
+      "repeat": {
+        "times": null,
+        "completed": 0
+      },
       "enabled": true,
       "deliver": "telegram:<chat_id>:<thread_id>",
       "workdir": "${HERMES_PROJECT_DIR:-/home/user/project}"
@@ -260,9 +353,16 @@
       "skills": [],
       "script": "sync-gh-comments.py",
       "no_agent": true,
-      "schedule": {"kind": "interval", "minutes": 5, "display": "every 5m"},
+      "schedule": {
+        "kind": "interval",
+        "minutes": 5,
+        "display": "every 5m"
+      },
       "schedule_display": "every 5m",
-      "repeat": {"times": null, "completed": 0},
+      "repeat": {
+        "times": null,
+        "completed": 0
+      },
       "enabled": true,
       "deliver": "local",
       "workdir": "${HERMES_PROJECT_DIR:-/home/user/project}"
@@ -274,26 +374,61 @@
       "skills": [],
       "script": "hermes-config-sync.py",
       "no_agent": true,
-      "schedule": {"kind": "interval", "minutes": 60, "display": "every 60m"},
+      "schedule": {
+        "kind": "interval",
+        "minutes": 60,
+        "display": "every 60m"
+      },
       "schedule_display": "every 60m",
-      "repeat": {"times": null, "completed": 0},
+      "repeat": {
+        "times": null,
+        "completed": 0
+      },
       "enabled": true,
       "deliver": "local",
       "workdir": "${HERMES_PROJECT_DIR:-/home/user/project}"
-    }
-,
-{
+    },
+    {
       "id": "job-audit-archived-unmerged",
       "name": "audit-archived-unmerged",
       "prompt": "",
       "skills": [],
       "script": "audit-archived-unmerged.py",
       "no_agent": true,
-      "schedule": {"kind": "interval", "minutes": 15, "display": "every 15m"},
+      "schedule": {
+        "kind": "interval",
+        "minutes": 15,
+        "display": "every 15m"
+      },
       "schedule_display": "every 15m",
-      "repeat": {"times": null, "completed": 0},
+      "repeat": {
+        "times": null,
+        "completed": 0
+      },
       "enabled": true,
       "deliver": "telegram:<chat_id>:<thread_id>",
       "workdir": "${HERMES_PROJECT_DIR:-/home/user/project}"
-    }  ]
+    },
+    {
+      "id": "job-drain-agent-queue",
+      "name": "drain-agent-queue",
+      "prompt": "",
+      "skills": [],
+      "script": "drain-agent-queue.py",
+      "no_agent": true,
+      "schedule": {
+        "kind": "cron",
+        "expr": "*/10 * * * *",
+        "display": "every 10m"
+      },
+      "schedule_display": "every 10m",
+      "repeat": {
+        "times": null,
+        "completed": 0
+      },
+      "enabled": true,
+      "deliver": "origin",
+      "workdir": "${HERMES_PROJECT_DIR:-/home/user/project}"
+    }
+  ]
 }

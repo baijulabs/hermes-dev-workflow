@@ -214,6 +214,21 @@ The `pr-consolidation-watch` script can only act on `done` coder cards. If a cod
 - **Test suite runtime:** The full `./run-tests.sh` takes 18+ minutes. The `process.wait()` clamp of 180s means you'll timeout repeatedly. Use `background=true` and poll with `process(action='poll')` every 60s, or run targeted test subsets with `./run-tests.sh backend -- -k <test-name>` for faster feedback during development.
 - **All-changes-already-merged scenario:** Before cherry-picking, check `git diff origin/main..HEAD --stat` from each worktree. If all worktrees have zero diff vs main, all fixes are already deployed — exit silently. Creating an empty PR wastes CI resources and noise.
 
+## Orchestrator-Owned Act Layer (v2.3.0)
+
+Rule: detection is script-only; action belongs either to a deterministic playbook script or to the orchestrator session. Never re-add an LLM prompt + `no_agent=false` to a polling cron that "decides and acts".
+
+- Detector jobs (`ingest-ci-failures`, `ingest-deploy-failures`, `build-reviewer-resolve`, `verify-deploy-qa`) run `no_agent=true`, deliver `origin`, silent on no-op. Their scripts enqueue structured findings to the shared `agent-queue.json` (see `scripts/agent_queue.py`).
+- `drain-agent-queue.py` (no_agent, every 10m) is the deterministic playbook handler:
+  - `review-failed` -> fix coder card + paired code-reviewer card, comment + archive the dead blocked reviewer.
+  - `ci-failure` -> CI-fix coder card + paired reviewer for an open PR with a merge conflict or failing checks.
+  - `deploy-qa` -> QA verification card (assignee `qa`, scratch workspace), enqueued by `verify-deploy-qa.py` on each new deploy.
+  - Unknown item types are marked processed with an `ESCALATED:` resolution so the orchestrator sees them once instead of every tick.
+- Guardrails: max 2 card-creating actions per tick; board-native idempotency dedup (`--idempotency-key` = the queue's `dedup_key`); skip if the branch tip is already an ancestor of origin/main; skip if the PR is not OPEN; skip if the source reviewer card is no longer blocked; 3 consecutive failures park an item. The drainer only creates cards — it never modifies code, pushes, or merges.
+- Card dispatch needs no cron: set `kanban.dispatch_in_gateway: true` and the gateway daemon dispatches ready cards every 60s. The former LLM dispatcher cron is gone.
+- Ambiguous findings stay with the orchestrator: drain the queue in-session when a session is active.
+- Cost note: this conversion eliminates ~800+ LLM cold-start sessions/day (each loading 30-100k tokens of skill context for a mostly-no-op poll) while leaving real worker costs untouched.
+
 ## References
 
 - `kanban-orchestrator` skill: decomposition playbook, PR consolidation rules, review gate pattern
