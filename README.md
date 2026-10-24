@@ -59,7 +59,7 @@ done
 
 # 3. Verify the board is wired:
 hermes kanban boards list
-hermes -p orchestrator cron list                # should list ~20 jobs
+hermes -p orchestrator cron list                # should list 20 jobs (incl. drain-agent-queue)
 
 # 4. Start the gateway (single shared gateway serves all profiles):
 hermes gateway start
@@ -68,6 +68,9 @@ hermes gateway start
 gh issue create --repo owner/project --title "Test: pipeline smoke" \
   --body "Ping" --label ready-for-agent
 # expect: ingest-gh-issues creates coder+reviewer cards within 5m (see cron output / kanban board)
+
+# 6. Smoke test the drainer (empty queue → silent, exit 0):
+hermes -p orchestrator cron run drain-agent-queue   # no output = clean empty-queue drain
 ```
 
 **Non-default data roots:** if you run Hermes with a custom `HERMES_HOME` (not `~/.hermes`), set `KANBAN_DIR` to `$HERMES_HOME/kanban/boards` in the cron environment — the scripts' default path assumes the standard layout.
@@ -106,6 +109,8 @@ gh issue create --repo owner/project --title "Test: pipeline smoke" \
 
 ## Pipeline
 
+> **Architecture principle:** Scripts detect, deterministic playbooks act, the orchestrator triages — no LLM session decides anything on a polling timer.
+
 ### 👑 Happy Path (GH Issue → Staging Deploy)
 
 ```
@@ -118,15 +123,8 @@ GH issue (labeled ready-for-agent)
 │  coder + reviewer kanban cards (worktrees).  │
 │  Ingestion only — never closes issues.       │
 └──────────────────────────────────────────────┘
-        │
-        ▼  coder + reviewer cards on board, ready
-┌──────────────────────────────────────────────┐
-│  02-queue · queue-agent-processor            │
-│  Dispatches coder (implements) + reviewer    │
-│  (approves) from kanban board.               │
-│  Schedule: every 30m (7am-9pm)               │
-└──────────────────────────────────────────────┘
-        │  coder done + reviewer approved
+        │  cards dispatched by the gateway daemon
+        │  (kanban.dispatch_in_gateway: true — every 60s, no cron)
         ▼  every 5m
 ┌──────────────────────────────────────────────┐
 │  03-build · build-consolidate-prs            │
@@ -152,7 +150,24 @@ GH issue (labeled ready-for-agent)
 │  01-ingest · ingest-deploy-failures          │
 │  Monitors main deploy runs at job-level.     │
 │  Detects Deploy to Staging failures →        │
-│  creates fix cards. Dedup via kanban board.  │
+│  enqueues fix tasks → agent queue. Dedup via │
+│  kanban board. (no_agent detector)           │
+└──────────────────────────────────────────────┘
+        │
+        ▼  every 10m
+┌──────────────────────────────────────────────┐
+│  05-act · drain-agent-queue                  │
+│  Deterministic playbook handler for the      │
+│  agent queue (agent-queue.json). Playbooks:  │
+│  review-failed → fix card + paired reviewer  │
+│  (+ archive dead reviewer) · ci-failure →    │
+│  CI-fix card + reviewer · deploy-qa → QA     │
+│  card per new deploy · unknown types         │
+│  escalate once for orchestrator triage.      │
+│  Guardrails: max 2 cards/tick, idempotency   │
+│  dedup, skip if merged/closed/unblocked,     │
+│  3-strike parking. Only creates cards —      │
+│  never modifies code.                        │
 └──────────────────────────────────────────────┘
         │  deploy succeeds
         ▼  every 10m
@@ -160,7 +175,9 @@ GH issue (labeled ready-for-agent)
 │  06-verify · verify-deploy-qa                │
 │  Validates staging health, critical flows,   │
 │  maps changed files → E2E steps. Creates     │
-│  GH issues for bugs found.                   │
+│  GH issues for bugs found. Also enqueues a   │
+│  deploy-qa item per new deploy (deduped per  │
+│  run) → agent queue for 05-act.              │
 └──────────────────────────────────────────────┘
 ```
 
@@ -170,18 +187,25 @@ GH issue (labeled ready-for-agent)
 ┌──────────────────────────────────────────────┐
 │  01-ingest · ingest-ci-failures (every 5m)   │
 │  Monitors open PRs for CI failures and merge │
-│  conflicts. Enqueues fix tasks → agent       │
-│  processor creates coder+reviewer cards.     │
+│  conflicts. no_agent detector: enqueues      │
+│  findings → agent queue (agent-queue.json);  │
+│  the drainer (05-act) acts on them.          │
 │  Conflict resolution pushed directly to the  │
 │  existing PR branch (no new PR created).     │
 └──────────────────────────────────────────────┘
 ```
 
+### ⚙️ Act Layer (deterministic playbooks, no LLM)
+
+| Job | Schedule | Handles |
+|-----|----------|---------|
+| `drain-agent-queue` | every 10m | Drains `agent-queue.json` with fixed recipes: `review-failed` → fix coder card + paired code-reviewer (+ archive the dead blocked reviewer); `ci-failure` → CI-fix coder card + paired reviewer; `deploy-qa` → QA card per new staging deploy. Unknown item types escalate once for orchestrator triage. Guardrails: max 2 card-creating actions/tick, idempotency dedup, skips merged/closed/unblocked sources, 3-strike parking. Only creates cards — never modifies code. |
+
 ### Edge Case Handlers (every 5m, 03-build phase)
 
 | Job | Handles |
 |-----|---------|
-| `build-reviewer-resolve` | Auto-resolves `review-failed:` blocked reviewer cards. Extracts findings, creates replacement coder+reviewer pair. |
+| `build-reviewer-resolve` | no_agent detector: extracts findings from `review-failed:` blocked reviewer cards and enqueues `review-failed` items → agent queue; the drainer (`drain-agent-queue`) creates the replacement coder+reviewer pair. |
 | `build-reviewer-approve` | Auto-completes reviewer cards when coder is done. |
 | `build-coder-resolve` | Handles coder timeouts and `review-required:` blocks. |
 
@@ -226,7 +250,7 @@ GH issue (labeled ready-for-agent)
 All cron jobs follow `{phase}-{action}` naming:
 
 ```
-00-cfg · 01-ingest · 02-queue · 03-build · 04-merge · 05-audit · 06-verify · 07-sync
+00-cfg · 01-ingest · 03-build · 04-merge · 05-act · 05-audit · 06-verify · 07-sync
 ```
 
 The phase prefix makes the pipeline sequence obvious in cron listings.
