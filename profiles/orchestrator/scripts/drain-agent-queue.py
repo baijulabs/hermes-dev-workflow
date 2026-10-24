@@ -57,25 +57,63 @@ GUARD = (
 
 def configure(board_slug=None, kanban_dir=None, repo_dir=None):
     """Resolve board + repo paths. Precedence: explicit args > env overrides
-    (KANBAN_DIR, KANBAN_REPO_DIR, HERMES_KANBAN_BOARD) > board.json's
-    default_workdir. Called by main(); tests call it directly."""
+    (KANBAN_DIR, KANBAN_REPO_DIR, HERMES_KANBAN_BOARD) > auto-discovery.
+
+    Auto-discovery: when no slug is given, scan the boards root for a board
+    whose default_workdir matches the repo checkout (cron workers on a live
+    install carry no HERMES_KANBAN_BOARD env, so a hardcoded default would
+    point at a nonexistent board). Falls back to scanning for exactly one
+    existing board directory."""
     global BOARD_SLUG, BOARD_DIR, DB, REPO
-    BOARD_SLUG = board_slug or os.environ.get("HERMES_KANBAN_BOARD", "main-dev")
+    if board_slug:
+        BOARD_SLUG = board_slug
+    elif env_slug := os.environ.get("HERMES_KANBAN_BOARD"):
+        BOARD_SLUG = env_slug
+    else:
+        BOARD_SLUG = None  # resolve below, from boards root scan
+
     if kanban_dir:
         BOARD_DIR = Path(kanban_dir)
     else:
         env_dir = os.environ.get("KANBAN_DIR")
-        BOARD_DIR = Path(env_dir) if env_dir else (
-            Path.home() / ".hermes" / "kanban" / "boards" / BOARD_SLUG)
-    DB = BOARD_DIR / "kanban.db"
+        boards_root = Path(env_dir) if env_dir else (
+            Path.home() / ".hermes" / "kanban" / "boards")
+        if BOARD_SLUG:
+            BOARD_DIR = boards_root / BOARD_SLUG
+        else:
+            BOARD_DIR = boards_root  # scan root; BOARD_DIR re-pointed below
+
     if repo_dir:
         REPO = Path(repo_dir)
-    elif os.environ.get("KANBAN_REPO_DIR"):
-        REPO = Path(os.environ["KANBAN_REPO_DIR"])
     else:
-        # Repo root from the board's own config — never hardcode.
-        _board_meta = json.loads((BOARD_DIR / "board.json").read_text())
-        REPO = Path(_board_meta["default_workdir"])
+        REPO = None  # resolve below
+
+    # board.json self-config: default_workdir is the repo, and when the slug
+    # is unresolved, the directory name of the matching board is the slug.
+    if REPO is None or BOARD_SLUG is None:
+        _candidates = [BOARD_DIR] if BOARD_SLUG else sorted(
+            p for p in BOARD_DIR.iterdir()
+            if (p / "board.json").is_file()) if BOARD_DIR.is_dir() else []
+        for _cand in _candidates:
+            try:
+                _meta = json.loads((_cand / "board.json").read_text())
+            except (OSError, ValueError):
+                continue
+            _workdir = _meta.get("default_workdir")
+            if not _workdir:
+                continue
+            if REPO is None:
+                REPO = Path(_workdir)
+            if BOARD_SLUG is None:
+                BOARD_SLUG = _cand.name
+                BOARD_DIR = _cand  # re-point from scan root to the board dir
+            break
+        if REPO is None:
+            raise RuntimeError(
+                "configure(): could not resolve repo dir — no board.json "
+                f"with default_workdir found under {BOARD_DIR}. Set "
+                "HERMES_KANBAN_BOARD or KANBAN_DIR.")
+    DB = BOARD_DIR / "kanban.db"
 
 
 def sh(cmd, cwd=None, timeout=120):
