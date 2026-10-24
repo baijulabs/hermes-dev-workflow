@@ -39,6 +39,36 @@ STAGING_URL="${STAGING_URL:-}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HERMES="$HOME/.hermes"
 
+# ---- Dry-run: print the plan, touch nothing ----
+# MUST run before any side effects. --dry-run performs zero writes: no profile
+# dirs, no cron files, no board creation. (A real incident showed why: a
+# "dry run" that isn't dry overwrites a live install's cron jobs.json.)
+if $DRY_RUN; then
+    echo "============================================"
+    echo " Setup DRY RUN — no changes will be made"
+    echo "============================================"
+    echo ""
+    echo "  Repo:          $REPO"
+    echo "  Directory:     $PROJECT_DIR"
+    echo "  Board:         $BOARD_SLUG"
+    echo "  Staging URL:   ${STAGING_URL:-<not configured>}"
+    echo "  Telegram tgt:  ${TELEGRAM_TARGET:-local}"
+    echo ""
+    echo "Would perform:"
+    echo "  1. Register profiles: orchestrator, qa, coder, code-reviewer"
+    echo "  2. Copy SOUL.md/scripts/skills into each profile dir"
+    echo "  3. Template profiles/orchestrator/cron/jobs.json from template"
+    echo "     (substituting repo/dir/board/staging/telegram values)"
+    echo "  4. Write config.yaml for profiles missing one"
+    echo "  5. Write .env template for profiles missing one"
+    echo "  6. Create kanban board '$BOARD_SLUG' + set default_workdir"
+    echo ""
+    echo "NOTE: rerunning setup on an existing install OVERWRITES the live"
+    echo "      jobs.json (a timestamped backup is made). Use --dry-run to"
+    echo "      inspect the plan safely."
+    exit 0
+fi
+
 # ---- Pre-flight: the project checkout must be a git repo with an origin ----
 # Every script self-configures its GitHub owner/repo from `git remote get-url
 # origin` in this directory — a non-repo or remote-less checkout silently
@@ -113,6 +143,13 @@ copy_profile() {
     # Cron (template → real)
     if [ -f "$src/cron/jobs.json.template" ]; then
         mkdir -p "$dst/cron"
+        # Backup any existing live jobs.json before overwriting. Rerunning
+        # setup on a live install loses per-job customizations otherwise.
+        if [ -f "$dst/cron/jobs.json" ]; then
+            local backup="$dst/cron/jobs.json.$(date +%Y%m%d-%H%M%S).bak"
+            cp "$dst/cron/jobs.json" "$backup"
+            echo "  ↳ backed up existing $name jobs.json → $(basename "$backup")"
+        fi
         # Match the full placeholder form ${VAR:-<default>} regardless of the
         # baked-in default, and replace with this install's values. Under
         # `set -u`, referencing $HERMES_PROJECT_REPO directly would abort the
