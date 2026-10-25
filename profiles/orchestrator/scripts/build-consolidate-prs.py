@@ -375,9 +375,21 @@ def create_individual_pr(entry, seen_commit_sets, skip_counters=None):
     dedup_key = "|".join(sorted(hashes))
     seen_commit_sets.add(dedup_key)
 
-    # Push branch
-    rc, _, _ = run(["git", "push", "origin", branch])
+    # Push branch. Prefer the local branch; if the worktree was pruned the
+    # local ref is gone but the worker already pushed to origin (mandatory
+    # pre-completion push), so push from the remote-tracking ref instead.
+    # A plain `git push origin <branch>` with no local branch fails silently
+    # here (rc!=0 → return 0 with no counter), leaving valid, reviewed work
+    # stranded on origin without a PR forever.
+    rc, out, _ = run(["git", "show-ref", "--verify", "--quiet", f"refs/heads/{branch}"])
+    if rc == 0:
+        rc, _, _ = run(["git", "push", "origin", branch])
+    else:
+        rc, _, _ = run(["git", "push", "origin",
+                        f"refs/remotes/origin/{branch}:refs/heads/{branch}"])
     if rc != 0:
+        skip_counters["push_failed"] = skip_counters.get("push_failed", 0) + 1
+        print(f"❌ Failed to push {branch} — skipping")
         return 0
 
     # Create PR
@@ -576,6 +588,7 @@ def main():
         "recovery_succeeded": 0,
         "already_merged": 0,
         "no_branch_card": 0,
+        "push_failed": 0,
         "no_branch_gh_closed": 0,
         "conflict_resolution": 0,
     }
@@ -688,7 +701,7 @@ def main():
             print(f"Error processing {db_path}: {e}")
 
     # Only notify about actionable items — skip resolved/archived/dead categories
-    action_skip_reasons = ["branch_lost", "no_branch_card"]
+    action_skip_reasons = ["branch_lost", "no_branch_card", "push_failed"]
     actionable_skipped = sum(skip_counters.get(r, 0) for r in action_skip_reasons)
     if created > 0 or actionable_skipped > 0:
         parts = [f"Created {created} PR(s)"]
