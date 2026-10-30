@@ -430,29 +430,41 @@ def commit_and_push(root, message):
 
 def mirror_to_vault(root):
     """Copy ROADMAP.md + docs/PRD to the Obsidian vault (standing instruction).
-    Requires KB_VAULT to be set; silently skipped otherwise (env-driven)."""
+    Requires KB_VAULT to be set; silently skipped otherwise (env-driven).
+    Only copies files whose content actually differs from the vault copy
+    (filecmp, byte-exact) so repeated runs produce no vault churn.
+    Returns the number of files updated (0 = nothing changed)."""
     if VAULT is None or not VAULT.exists():
-        return False
+        return 0
+    import filecmp
+    copied = 0
     try:
         (VAULT / "docs").mkdir(parents=True, exist_ok=True)
         (VAULT / "docs" / "PRD").mkdir(parents=True, exist_ok=True)
-        shutil.copy2(root / "ROADMAP.md", VAULT / "ROADMAP.md")
-        for f in (root / "docs" / "PRD").glob("*.md"):
-            shutil.copy2(f, VAULT / "docs" / "PRD" / f.name)
+        for src, dst in (
+            (root / "ROADMAP.md", VAULT / "ROADMAP.md"),
+            *[(f, VAULT / "docs" / "PRD" / f.name)
+              for f in (root / "docs" / "PRD").glob("*.md")],
+        ):
+            if dst.exists() and filecmp.cmp(src, dst, shallow=False):
+                continue
+            shutil.copy2(src, dst)
+            copied += 1
         idx = VAULT / "docs" / "Current_PRD_Index.md"
-        if idx.exists():
+        if idx.exists() and copied:
             content = idx.read_text(encoding="utf-8")
             today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-            content = re.sub(
+            new_content = re.sub(
                 r"> \*\*Last updated:\*\* [^*]*",
                 f"> **Last updated:** {today}",
                 content,
                 count=1,
             )
-            idx.write_text(content, encoding="utf-8")
-        return True
+            if new_content != content:
+                idx.write_text(new_content, encoding="utf-8")
+        return copied
     except Exception:
-        return False
+        return copied
 
 
 def commit_and_push_vault(message):
@@ -593,10 +605,23 @@ def main():
             today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
             if commit_and_push(root, f"docs: roadmap auto-update — {len(new_prs)} merged PRs ({today})"):
                 notes.append("repo pushed")
-            if mirror_to_vault(root):
-                if commit_and_push_vault(f"docs: roadmap auto-update mirror ({today})"):
-                    notes.append("vault mirrored")
+
         state["last_pr_id"] = max(p["number"] for p in new_prs)
+
+    # ---- vault mirror: run whenever new PRs were seen, or once per run when
+    # the repo docs tree differs from the vault (fixes docs-only PRs being
+    # detected but never mirrored). Only commits the vault when file content
+    # actually changed (mirror_to_vault returns the count of updated files).
+    if VAULT is not None:
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        copied = mirror_to_vault(root)
+        if copied:
+            if changes_made:
+                vault_msg = f"docs: roadmap auto-update mirror ({today})"
+            else:
+                vault_msg = f"docs: prd mirror ({today})"
+            if commit_and_push_vault(vault_msg):
+                notes.append(f"vault mirrored ({copied} file(s))")
 
     # ---- upcoming track: candidate pool + freshness
     candidates = fetch_open_feature_issues()
